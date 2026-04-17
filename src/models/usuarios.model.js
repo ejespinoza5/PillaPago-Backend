@@ -33,6 +33,20 @@ async function getUsuarioById(idUsuario) {
   return result.rows[0] || null;
 }
 
+async function getOwnerByNegocioId(idNegocio) {
+  const result = await query(
+    `SELECT id_usuario, nombre, email, email_verificado, google_id, foto_perfil_url, rol, id_negocio, fecha_registro
+     FROM usuarios
+     WHERE id_negocio = $1
+       AND rol = 'dueno'
+     ORDER BY id_usuario ASC
+     LIMIT 1`,
+    [idNegocio]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function getUsuarioProfileById(idUsuario) {
   const result = await query(
     `SELECT
@@ -292,6 +306,7 @@ module.exports = {
   getUsuarioAuthById,
   getUsuarioAuthByEmail,
   getUsuarioById,
+  getOwnerByNegocioId,
   getUsuarioProfileById,
   listUsuariosRecords,
   revokeAllRefreshTokensForUser,

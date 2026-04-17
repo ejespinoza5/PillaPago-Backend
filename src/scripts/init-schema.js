@@ -41,6 +41,17 @@ async function run() {
     `);
 
     await query(`
+      ALTER TABLE usuarios
+      ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'activo';
+    `);
+
+    await query(`
+      UPDATE usuarios
+      SET estado = 'activo'
+      WHERE estado IS NULL;
+    `);
+
+    await query(`
       UPDATE usuarios
       SET email_verificado = true
       WHERE google_id IS NOT NULL;
@@ -118,6 +129,49 @@ async function run() {
       CREATE UNIQUE INDEX IF NOT EXISTS ux_transferencias_usuario_client_sync
       ON transferencias (id_usuario, client_sync_id)
       WHERE client_sync_id IS NOT NULL;
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS notificaciones (
+        id_notificacion BIGSERIAL PRIMARY KEY,
+        id_destinatario INT NOT NULL REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+        id_actor INT REFERENCES usuarios(id_usuario) ON DELETE SET NULL,
+        id_negocio INT REFERENCES negocios(id_negocio) ON DELETE SET NULL,
+        tipo VARCHAR(50) NOT NULL,
+        titulo VARCHAR(120) NOT NULL,
+        mensaje TEXT NOT NULL,
+        payload JSONB,
+        leida BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_notificaciones_destinatario_fecha
+      ON notificaciones (id_destinatario, created_at DESC);
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_notificaciones_destinatario_leida
+      ON notificaciones (id_destinatario, leida);
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS device_tokens (
+        id_device_token BIGSERIAL PRIMARY KEY,
+        id_usuario INT NOT NULL REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+        token VARCHAR(512) NOT NULL,
+        plataforma VARCHAR(20) NOT NULL CHECK (plataforma IN ('android', 'ios', 'web')),
+        activo BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (id_usuario, token)
+      );
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_device_tokens_usuario_activo
+      ON device_tokens (id_usuario, activo);
     `);
 
     console.log("Esquema creado o actualizado correctamente");

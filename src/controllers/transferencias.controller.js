@@ -4,6 +4,7 @@ const {
   countTransferenciasByUsuario,
   createTransferenciaRecord,
   deactivateTransferenciaRecord,
+  getTransferenciasCountLast7Days,
   getTransferenciaById,
   getTotalMontoByAnio,
   getTotalMontoByFecha,
@@ -14,6 +15,7 @@ const {
   listTransferenciasByUsuario,
   updateTransferenciaRecord
 } = require("../models/transferencias.model");
+const { notifyOwnerTransferCreated } = require("../services/notification.service");
 const { uploadTransferImage } = require("../services/storage.service");
 
 const EMPLEADO_EDIT_WINDOW_MS = 5 * 60 * 1000;
@@ -210,6 +212,31 @@ async function getTotalTransferenciasPorAnio(req, res, next) {
   }
 }
 
+async function getTransferenciasEstadisticaUltimos7Dias(req, res, next) {
+  try {
+    const result = await getUserTransferScope(req.auth.id_usuario);
+
+    if (result.error) {
+      return res.status(result.error.status).json({ message: result.error.message });
+    }
+
+    const data = await getTransferenciasCountLast7Days(result.scope);
+    const totalPeriodo = data.reduce(
+      (acc, item) => acc + Number(item.total_transferencias || 0),
+      0
+    );
+
+    return res.json({
+      periodo: "ultimos_7_dias",
+      dias_incluidos: 7,
+      total_periodo: totalPeriodo,
+      data
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function listTransferencias(req, res, next) {
   try {
     const pagination = parsePagination(req.query);
@@ -374,6 +401,15 @@ async function createTransferencia(req, res, next) {
       imagePath: uploadResult.imagePath
     });
 
+    try {
+      await notifyOwnerTransferCreated({
+        transferencia,
+        actorUsuario: usuario
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion por transferencia", notificationError);
+    }
+
     res.status(201).json(transferencia);
   } catch (error) {
     next(error);
@@ -535,6 +571,7 @@ module.exports = {
   createTransferencia,
   deleteTransferencia,
   getTransferenciaByIdController,
+  getTransferenciasEstadisticaUltimos7Dias,
   getTotalTransferenciasHoy,
   getTotalTransferenciasPorAnio,
   getTotalTransferenciasPorDia,

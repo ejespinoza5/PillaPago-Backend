@@ -1,0 +1,309 @@
+# Readme Notificaciones
+
+Documento de referencia para todas las APIs de notificaciones del backend.
+
+## Requisito para push real (FCM)
+
+Para que el backend envie notificaciones push al celular, configura Firebase Admin en el .env:
+
+- FCM_ENABLED=true
+- FCM_PROJECT_ID=tu-project-id-firebase
+- FCM_CLIENT_EMAIL=firebase-adminsdk-xxxx@tu-project-id.iam.gserviceaccount.com
+- FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+
+Importante:
+
+- Estas credenciales salen de Firebase Console > Project settings > Service accounts.
+- No uses el archivo client_secret de Google OAuth para FCM server-side; necesitas service account de Firebase Admin.
+
+## Base URL
+
+- Local: http://localhost:3000
+- Prefijo API: /api
+
+## Autenticacion
+
+Todas las rutas de notificaciones requieren token Bearer.
+
+Header requerido:
+
+Authorization: Bearer TU_JWT
+
+## 1) APIs del centro de notificaciones
+
+### 1.1 Listar mis notificaciones
+
+- Metodo: GET
+- Ruta: /api/notificaciones
+- Query params opcionales:
+  - page: entero >= 1 (default: 1)
+  - limit: entero entre 1 y 100 (default: 20)
+  - solo_no_leidas: 1 | true | si | yes
+
+Ejemplo:
+
+GET /api/notificaciones?page=1&limit=20&solo_no_leidas=true
+
+Respuesta 200:
+
+{
+  "data": [
+    {
+      "id_notificacion": 31,
+      "id_destinatario": 2,
+      "id_actor": 5,
+      "id_negocio": 1,
+      "tipo": "transferencia_creada",
+      "titulo": "Nueva transferencia registrada",
+      "mensaje": "Juan registro una transferencia por $25.00",
+      "payload": {
+        "id_transferencia": "uuid",
+        "monto": 25
+      },
+      "leida": false,
+      "created_at": "2026-04-16T21:00:00.000Z",
+      "actor_nombre": "Juan"
+    }
+  ],
+  "unread_count": 6,
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 6,
+    "totalPages": 1,
+    "hasNextPage": false,
+    "hasPrevPage": false
+  }
+}
+
+Errores comunes:
+
+- 401: Token invalido
+- 400: page o limit invalidos
+
+### 1.2 Marcar una notificacion como leida
+
+- Metodo: PATCH
+- Ruta: /api/notificaciones/:id/leida
+- Params:
+  - id: id_notificacion (entero > 0)
+
+Ejemplo:
+
+PATCH /api/notificaciones/31/leida
+
+Respuesta 200:
+
+{
+  "message": "Notificacion marcada como leida",
+  "notificacion": {
+    "id_notificacion": 31,
+    "leida": true
+  }
+}
+
+Errores comunes:
+
+- 401: Token invalido
+- 400: id invalido
+- 404: Notificacion no encontrada
+
+### 1.3 Marcar todas mis notificaciones como leidas
+
+- Metodo: PATCH
+- Ruta: /api/notificaciones/leidas/todas
+
+Ejemplo:
+
+PATCH /api/notificaciones/leidas/todas
+
+Respuesta 200:
+
+{
+  "message": "Notificaciones marcadas como leidas",
+  "updated_count": 4
+}
+
+Errores comunes:
+
+- 401: Token invalido
+
+## 2) APIs de tokens de dispositivo (push)
+
+Estas rutas preparan el backend para enviar push notifications (Firebase/FCM).
+
+Flujo recomendado en app:
+
+1. Obtener token FCM en el dispositivo.
+2. Enviar token al backend usando POST /api/device-tokens.
+3. Disparar un evento que cree una notificacion (ejemplo: POST /api/transferencias).
+4. El backend guarda en tabla notificaciones y ademas envia push por FCM a los tokens activos del destinatario.
+
+### 2.1 Listar mis tokens activos
+
+- Metodo: GET
+- Ruta: /api/device-tokens
+
+Respuesta 200:
+
+{
+  "data": [
+    {
+      "id_device_token": 10,
+      "id_usuario": 2,
+      "token": "fcm-token-xyz",
+      "plataforma": "android",
+      "activo": true,
+      "created_at": "2026-04-16T21:00:00.000Z",
+      "updated_at": "2026-04-16T21:00:00.000Z"
+    }
+  ],
+  "total": 1
+}
+
+### 2.2 Registrar token de dispositivo
+
+- Metodo: POST
+- Ruta: /api/device-tokens
+- Body JSON:
+
+{
+  "token": "TOKEN_FCM_DEL_CELULAR",
+  "plataforma": "android"
+}
+
+Plataformas permitidas:
+
+- android
+- ios
+- web
+
+Respuesta 201:
+
+{
+  "message": "Token de dispositivo registrado",
+  "device_token": {
+    "id_device_token": 10,
+    "id_usuario": 2,
+    "token": "TOKEN_FCM_DEL_CELULAR",
+    "plataforma": "android",
+    "activo": true
+  }
+}
+
+Errores comunes:
+
+- 401: Token invalido
+- 400: token requerido
+- 400: token excede el maximo permitido
+- 400: plataforma invalida
+
+### 2.3 Desactivar token de dispositivo
+
+- Metodo: DELETE
+- Ruta: /api/device-tokens
+- Body JSON:
+
+{
+  "token": "TOKEN_FCM_DEL_CELULAR"
+}
+
+Respuesta 200:
+
+{
+  "message": "Token de dispositivo actualizado",
+  "updated_count": 1
+}
+
+Errores comunes:
+
+- 401: Token invalido
+- 400: token requerido
+
+## 3) APIs que generan notificaciones automaticamente
+
+Estas rutas no son de lectura de notificaciones, pero crean notificaciones internas en segundo plano.
+
+### 3.1 Registro de dueno (bienvenida)
+
+- Metodo: POST
+- Ruta: /api/auth/email/register-owner
+- Genera tipo: bienvenida_dueno
+
+Tambien aplica en onboarding Google:
+
+- Metodo: POST
+- Ruta: /api/negocios/register-owner
+- Genera tipo: bienvenida_dueno
+
+### 3.2 Registro de empleado (bienvenida + aviso al dueno)
+
+- Metodo: POST
+- Ruta: /api/auth/email/register-employee
+- Genera tipos:
+  - bienvenida_empleado
+  - empleado_registrado (para el dueno)
+
+Tambien aplica en onboarding Google:
+
+- Metodo: POST
+- Ruta: /api/negocios/join
+- Genera tipos:
+  - bienvenida_empleado
+  - empleado_registrado (para el dueno)
+
+### 3.3 Crear transferencia (aviso al dueno)
+
+- Metodo: POST
+- Ruta: /api/transferencias
+- Genera tipo: transferencia_creada
+
+### 3.4 Cambio de contrasena (seguridad)
+
+- Metodo: PATCH
+- Ruta: /api/auth/password
+- Genera tipo: seguridad_password_cambiado
+
+### 3.5 Confirmar cambio de correo (seguridad)
+
+- Metodo: POST
+- Ruta: /api/auth/email/change/confirm
+- Genera tipo: seguridad_email_cambiado
+
+### 3.6 Confirmar verificacion de correo (seguridad)
+
+- Metodo: POST
+- Ruta: /api/auth/email/verify/confirm
+- Genera tipo: seguridad_email_verificado
+
+## 4) Lista de tipos de notificacion actuales
+
+- bienvenida_dueno
+- bienvenida_empleado
+- empleado_registrado
+- transferencia_creada
+- seguridad_password_cambiado
+- seguridad_email_cambiado
+- seguridad_email_verificado
+
+## 5) Recomendacion de consumo en app movil
+
+1. Al iniciar sesion:
+   - Registrar token con POST /api/device-tokens
+2. En la campana de notificaciones:
+   - Listar con GET /api/notificaciones
+3. Al abrir una notificacion:
+   - Marcar leida con PATCH /api/notificaciones/:id/leida
+4. Boton "Marcar todas":
+   - PATCH /api/notificaciones/leidas/todas
+5. Al cerrar sesion:
+   - DELETE /api/device-tokens para desactivar token
+
+## 6) Checklist rapido Postman
+
+1. Hacer login y guardar token JWT.
+2. Probar GET /api/notificaciones.
+3. Probar POST /api/device-tokens con token y plataforma.
+4. Disparar un evento (ejemplo: crear transferencia).
+5. Volver a GET /api/notificaciones y validar nueva entrada.
+6. Marcar una y luego todas como leidas.

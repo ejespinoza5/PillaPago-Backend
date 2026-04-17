@@ -4,6 +4,7 @@ const {
   createTransferencia,
   deleteTransferencia,
   getTransferenciaByIdController,
+  getTransferenciasEstadisticaUltimos7Dias,
   getTotalTransferenciasHoy,
   getTotalTransferenciasPorAnio,
   getTotalTransferenciasPorDia,
@@ -21,6 +22,7 @@ router.get("/totales/hoy", requireAuth, getTotalTransferenciasHoy);
 router.get("/totales/dia", requireAuth, getTotalTransferenciasPorDia);
 router.get("/totales/mes", requireAuth, getTotalTransferenciasPorMes);
 router.get("/totales/anio", requireAuth, getTotalTransferenciasPorAnio);
+router.get("/estadisticas/ultimos-7-dias", requireAuth, getTransferenciasEstadisticaUltimos7Dias);
 router.get("/:id", requireAuth, getTransferenciaByIdController);
 router.post("/", requireAuth, upload.single("imagen"), createTransferencia);
 router.patch("/:id", requireAuth, upload.single("imagen"), updateTransferencia);

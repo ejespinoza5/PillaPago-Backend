@@ -78,6 +78,46 @@ CREATE UNIQUE INDEX ux_transferencias_usuario_client_sync
 ON transferencias (id_usuario, client_sync_id)
 WHERE client_sync_id IS NOT NULL;
 
+-- 7. Tabla de Notificaciones (centro de notificaciones en app)
+CREATE TABLE notificaciones (
+        id_notificacion BIGSERIAL PRIMARY KEY,
+        id_destinatario INT NOT NULL,
+        id_actor INT,
+        id_negocio INT,
+        tipo VARCHAR(50) NOT NULL,
+        titulo VARCHAR(120) NOT NULL,
+        mensaje TEXT NOT NULL,
+        payload JSONB,
+        leida BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_destinatario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+        FOREIGN KEY (id_actor) REFERENCES usuarios(id_usuario) ON DELETE SET NULL,
+        FOREIGN KEY (id_negocio) REFERENCES negocios(id_negocio) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_notificaciones_destinatario_fecha
+ON notificaciones (id_destinatario, created_at DESC);
+
+CREATE INDEX idx_notificaciones_destinatario_leida
+ON notificaciones (id_destinatario, leida);
+
+-- 8. Tabla de Tokens de Dispositivo (push notifications)
+CREATE TABLE device_tokens (
+        id_device_token BIGSERIAL PRIMARY KEY,
+        id_usuario INT NOT NULL,
+        token VARCHAR(512) NOT NULL,
+        plataforma VARCHAR(20) NOT NULL
+            CHECK (plataforma IN ('android', 'ios', 'web')),
+        activo BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+        UNIQUE (id_usuario, token)
+);
+
+CREATE INDEX idx_device_tokens_usuario_activo
+ON device_tokens (id_usuario, activo);
+
 -- ============================================================
 -- INSERT de bancos de Ecuador con app móvil para transferencias
 -- Incluye: bancos privados, públicos y apps de pago

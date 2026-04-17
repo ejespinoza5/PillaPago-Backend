@@ -73,6 +73,32 @@ async function getTotalMontoByAnio({ anio, idNegocio, idUsuario }) {
   return Number(result.rows[0]?.total || 0);
 }
 
+async function getTransferenciasCountLast7Days({ idNegocio, idUsuario }) {
+  const scope = getScopeCondition({ idNegocio, idUsuario }, 2);
+  const result = await query(
+    `WITH dias AS (
+       SELECT generate_series(
+         DATE(NOW() AT TIME ZONE $1) - INTERVAL '6 days',
+         DATE(NOW() AT TIME ZONE $1),
+         INTERVAL '1 day'
+       )::date AS fecha
+     )
+     SELECT
+       TO_CHAR(d.fecha, 'YYYY-MM-DD') AS fecha,
+       COALESCE(COUNT(t.id_transferencia), 0)::int AS total_transferencias
+     FROM dias d
+     LEFT JOIN transferencias t
+       ON DATE(t.fecha_transferencia) = d.fecha
+      AND t.estado = 'ACTIVO'
+      AND ${scope.sql}
+     GROUP BY d.fecha
+     ORDER BY d.fecha ASC`,
+    [APP_TIMEZONE, ...scope.params]
+  );
+
+  return result.rows;
+}
+
 async function getTransferenciaById(idTransferencia) {
   const result = await query(
     `SELECT id_transferencia, id_negocio, id_usuario, id_banco, client_sync_id, monto, url_comprobante,
@@ -256,6 +282,7 @@ module.exports = {
   getTotalMontoByFecha,
   getTotalMontoByMes,
   getTotalMontoHoy,
+  getTransferenciasCountLast7Days,
   listTransferenciasByNegocio,
   listTransferenciasByUsuario,
   updateTransferenciaRecord

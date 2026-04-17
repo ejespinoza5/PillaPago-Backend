@@ -44,6 +44,23 @@ Permite:
 - SUPABASE_URL=https://tu-proyecto.supabase.co
 - SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key
 - SUPABASE_STORAGE_BUCKET=imagenes
+- FCM_ENABLED=true
+- FCM_PROJECT_ID=tu-project-id-firebase
+- FCM_CLIENT_EMAIL=firebase-adminsdk-xxxx@tu-project-id.iam.gserviceaccount.com
+- FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+
+## Configurar Push Con FCM
+
+1. En Firebase Console abre tu proyecto.
+2. Ve a Project settings > Service accounts.
+3. Crea una nueva clave privada para Firebase Admin SDK.
+4. Copia project_id, client_email y private_key al .env con las variables FCM_*. 
+5. Reinicia el backend despues de guardar el .env.
+
+Notas:
+
+- FCM_PRIVATE_KEY debe conservar los saltos de linea como \\n dentro del .env.
+- Si quieres desactivar temporalmente los push sin quitar credenciales, usa FCM_ENABLED=false.
 
 ## Endpoints
 
@@ -246,6 +263,7 @@ Flujo de cambio de correo:
 ### Transferencias
 
 - GET /api/transferencias (Bearer token)
+- GET /api/transferencias/estadisticas/ultimos-7-dias (Bearer token)
 - POST /api/transferencias (Bearer token, multipart/form-data)
 
 POST /api/transferencias campos:
@@ -266,6 +284,23 @@ Notas de acceso:
 
 - dueno ve todas las transferencias de su negocio
 - empleado ve solo sus transferencias
+
+Respuesta ejemplo GET /api/transferencias/estadisticas/ultimos-7-dias:
+
+{
+   "periodo": "ultimos_7_dias",
+   "dias_incluidos": 7,
+   "total_periodo": 12,
+   "data": [
+      { "fecha": "2026-04-05", "total_transferencias": 1 },
+      { "fecha": "2026-04-06", "total_transferencias": 0 },
+      { "fecha": "2026-04-07", "total_transferencias": 2 },
+      { "fecha": "2026-04-08", "total_transferencias": 3 },
+      { "fecha": "2026-04-09", "total_transferencias": 1 },
+      { "fecha": "2026-04-10", "total_transferencias": 2 },
+      { "fecha": "2026-04-11", "total_transferencias": 3 }
+   ]
+}
 
 ### Empleados
 

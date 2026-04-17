@@ -23,6 +23,12 @@ const {
   verifyUsuarioEmail,
   upsertGoogleUsuario
 } = require("../models/usuarios.model");
+const {
+  notifyEmployeeWelcomeJoinedBusiness,
+  notifyOwnerEmployeeJoined,
+  notifyOwnerWelcomeCreatedBusiness,
+  notifySecurityEvent
+} = require("../services/notification.service");
 const { sendEmailChangeCodeEmail, sendVerificationCodeEmail } = require("../services/mailer.service");
 const { uploadUserProfileImage } = require("../services/storage.service");
 const { generateInvitationCode } = require("../utils/invitation-code");
@@ -287,6 +293,37 @@ async function handleEmailRegistration(req, res, next, mode = "general") {
       fotoPerfilUrl
     });
 
+    if (rol === "empleado" && idNegocio) {
+      try {
+        await notifyOwnerEmployeeJoined({
+          idNegocio,
+          empleado: usuario
+        });
+      } catch (notificationError) {
+        console.error("No se pudo crear notificacion de nuevo empleado", notificationError);
+      }
+
+      try {
+        await notifyEmployeeWelcomeJoinedBusiness({
+          empleado: usuario,
+          negocio
+        });
+      } catch (notificationError) {
+        console.error("No se pudo crear notificacion de bienvenida para empleado", notificationError);
+      }
+    }
+
+    if (rol === "dueno" && idNegocio) {
+      try {
+        await notifyOwnerWelcomeCreatedBusiness({
+          dueno: usuario,
+          negocio
+        });
+      } catch (notificationError) {
+        console.error("No se pudo crear notificacion de bienvenida para dueno", notificationError);
+      }
+    }
+
     const token = signToken(usuario);
 
     const verificationCode = generateNumericCode(6);
@@ -458,6 +495,21 @@ async function changePassword(req, res, next) {
     const nuevoHash = await bcrypt.hash(String(passwordNueva), 10);
     await updateUsuarioPassword(idUsuario, nuevoHash);
 
+    try {
+      await notifySecurityEvent({
+        usuario,
+        tipo: "seguridad_password_cambiado",
+        titulo: "Cambio de contrasena exitoso",
+        mensaje: "Tu contrasena fue actualizada correctamente",
+        payload: {
+          id_usuario: usuario.id_usuario,
+          email: usuario.email
+        }
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion de seguridad por cambio de contrasena", notificationError);
+    }
+
     return res.json({ message: "Contrasena actualizada correctamente" });
   } catch (error) {
     next(error);
@@ -602,6 +654,22 @@ async function confirmEmailChange(req, res, next) {
 
     const usuarioActualizado = await updateUsuarioEmail(idUsuario, newEmail);
 
+    try {
+      await notifySecurityEvent({
+        usuario: usuarioActualizado,
+        tipo: "seguridad_email_cambiado",
+        titulo: "Correo actualizado",
+        mensaje: "Tu correo de acceso fue actualizado correctamente",
+        payload: {
+          id_usuario: usuarioActualizado.id_usuario,
+          email_anterior: usuario.email,
+          email_nuevo: usuarioActualizado.email
+        }
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion de seguridad por cambio de correo", notificationError);
+    }
+
     return res.json({
       message: "Correo actualizado correctamente",
       usuario: getPublicUser(usuarioActualizado)
@@ -738,6 +806,21 @@ async function confirmEmailVerification(req, res, next) {
     }
 
     const usuarioActualizado = await verifyUsuarioEmail(idUsuario);
+
+    try {
+      await notifySecurityEvent({
+        usuario: usuarioActualizado,
+        tipo: "seguridad_email_verificado",
+        titulo: "Correo verificado",
+        mensaje: "Tu correo fue verificado correctamente",
+        payload: {
+          id_usuario: usuarioActualizado.id_usuario,
+          email: usuarioActualizado.email
+        }
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion de seguridad por verificacion de correo", notificationError);
+    }
 
     return res.json({
       message: "Correo verificado correctamente",

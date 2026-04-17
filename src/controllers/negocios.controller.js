@@ -5,6 +5,11 @@ const {
   listNegociosRecords
 } = require("../models/negocios.model");
 const { assignUsuarioToNegocio, getUsuarioById } = require("../models/usuarios.model");
+const {
+  notifyEmployeeWelcomeJoinedBusiness,
+  notifyOwnerEmployeeJoined,
+  notifyOwnerWelcomeCreatedBusiness
+} = require("../services/notification.service");
 const { generateInvitationCode } = require("../utils/invitation-code");
 
 async function createNegocioWithUniqueCode(nombreNegocio) {
@@ -96,6 +101,15 @@ async function registerOwnerNegocio(req, res, next) {
       rol: "dueno"
     });
 
+    try {
+      await notifyOwnerWelcomeCreatedBusiness({
+        dueno: usuarioActualizado,
+        negocio
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion de bienvenida para dueno", notificationError);
+    }
+
     res.status(201).json({
       negocio,
       usuario: usuarioActualizado
@@ -136,6 +150,24 @@ async function joinNegocioByCode(req, res, next) {
       idNegocio: negocio.id_negocio,
       rol: "empleado"
     });
+
+    try {
+      await notifyOwnerEmployeeJoined({
+        idNegocio: negocio.id_negocio,
+        empleado: usuarioActualizado
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion de nuevo empleado", notificationError);
+    }
+
+    try {
+      await notifyEmployeeWelcomeJoinedBusiness({
+        empleado: usuarioActualizado,
+        negocio
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion de bienvenida para empleado", notificationError);
+    }
 
     res.json({
       negocio,
