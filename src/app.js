@@ -1,11 +1,16 @@
 const express = require("express");
+const path = require("path");
 
 const apiRoutes = require("./routes");
 
 const app = express();
+const UPLOADS_ROOT = path.resolve(__dirname, "..", "imagenes subidas");
+const LEGACY_UPLOADS_ROOT = path.resolve(__dirname, "imagenes subidas");
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use("/imagenes-subidas", express.static(UPLOADS_ROOT));
+app.use("/imagenes-subidas", express.static(LEGACY_UPLOADS_ROOT));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });

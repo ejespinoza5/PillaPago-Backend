@@ -29,12 +29,18 @@ const {
   notifyOwnerWelcomeCreatedBusiness,
   notifySecurityEvent
 } = require("../services/notification.service");
-const { sendEmailChangeCodeEmail, sendVerificationCodeEmail } = require("../services/mailer.service");
+const {
+  sendEmailChangeCodeEmail,
+  sendPasswordResetCodeEmail,
+  sendVerificationCodeEmail
+} = require("../services/mailer.service");
 const { uploadUserProfileImage } = require("../services/storage.service");
 const { generateInvitationCode } = require("../utils/invitation-code");
 
 const EMAIL_CHANGE_PURPOSE = "email_change";
 const EMAIL_CHANGE_CODE_TTL_MINUTES = 10;
+const PASSWORD_RESET_PURPOSE = "password_reset";
+const PASSWORD_RESET_CODE_TTL_MINUTES = 10;
 const EMAIL_VERIFY_PURPOSE = "email_verification";
 const EMAIL_VERIFY_CODE_TTL_MINUTES = 10;
 
@@ -443,6 +449,152 @@ async function getMe(req, res, next) {
   }
 }
 
+async function forgotPassword(req, res, next) {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({ message: "email es requerido" });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: "email no es valido" });
+    }
+
+    const usuario = await getUsuarioAuthByEmail(email);
+
+    // Respuesta neutral para no exponer si el correo existe o no.
+    if (!usuario) {
+      return res.json({
+        message: "Se envio un codigo de recuperacion al correo ingresado"
+      });
+    }
+
+    const code = generateNumericCode(6);
+    const codeHash = hashCode(code);
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_CODE_TTL_MINUTES * 60 * 1000);
+
+    await invalidateEmailCodes({
+      purpose: PASSWORD_RESET_PURPOSE,
+      email: usuario.email,
+      idUsuario: usuario.id_usuario,
+      newEmail: null
+    });
+
+    await createEmailCodeRecord({
+      purpose: PASSWORD_RESET_PURPOSE,
+      email: usuario.email,
+      idUsuario: usuario.id_usuario,
+      newEmail: null,
+      codeHash,
+      expiresAt
+    });
+
+    await sendPasswordResetCodeEmail({
+      to: usuario.email,
+      nombre: usuario.nombre,
+      code
+    });
+
+    return res.json({
+      message: "Se envio un codigo de recuperacion al correo ingresado",
+      expires_in_minutes: PASSWORD_RESET_CODE_TTL_MINUTES
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function resetPassword(req, res, next) {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const code = String(req.body?.code || "").trim();
+    const newPassword = req.body?.newPassword || req.body?.password_nueva || req.body?.contrasena_nueva;
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ message: "email, code y newPassword son requeridos" });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: "email no es valido" });
+    }
+
+    const passwordValidation = validatePasswordPolicy(newPassword);
+
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        message: `La contrasena nueva no cumple la politica: ${passwordValidation.errors.join(", ")}`
+      });
+    }
+
+    const usuario = await getUsuarioAuthByEmail(email);
+
+    if (!usuario) {
+      return res.status(400).json({ message: "No se pudo validar el codigo" });
+    }
+
+    const codeHash = hashCode(code);
+
+    const consumedCode = await consumeEmailCode({
+      purpose: PASSWORD_RESET_PURPOSE,
+      email: usuario.email,
+      idUsuario: usuario.id_usuario,
+      newEmail: null,
+      codeHash
+    });
+
+    if (!consumedCode) {
+      const status = await getLatestEmailCodeStatus({
+        purpose: PASSWORD_RESET_PURPOSE,
+        email: usuario.email,
+        idUsuario: usuario.id_usuario,
+        newEmail: null,
+        codeHash
+      });
+
+      if (status === "no_code_requested") {
+        return res.status(400).json({ message: "No hay codigo de recuperacion solicitado" });
+      }
+
+      if (status === "code_expired") {
+        return res.status(400).json({ message: "El codigo expiro" });
+      }
+
+      if (status === "code_already_used") {
+        return res.status(400).json({ message: "El codigo ya fue usado" });
+      }
+
+      if (status === "code_incorrect") {
+        return res.status(400).json({ message: "Codigo incorrecto" });
+      }
+
+      return res.status(400).json({ message: "No se pudo validar el codigo" });
+    }
+
+    const newPasswordHash = await bcrypt.hash(String(newPassword), 10);
+    const usuarioActualizado = await updateUsuarioPassword(usuario.id_usuario, newPasswordHash);
+
+    try {
+      await notifySecurityEvent({
+        usuario: usuarioActualizado || usuario,
+        tipo: "seguridad_password_recuperado",
+        titulo: "Contrasena restablecida",
+        mensaje: "Tu contrasena fue restablecida correctamente",
+        payload: {
+          id_usuario: usuario.id_usuario,
+          email: usuario.email
+        }
+      });
+    } catch (notificationError) {
+      console.error("No se pudo crear notificacion de seguridad por recuperacion", notificationError);
+    }
+
+    return res.json({ message: "Contrasena restablecida correctamente" });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function changePassword(req, res, next) {
   try {
     const idUsuario = Number(req.auth?.id_usuario);
@@ -833,12 +985,14 @@ async function confirmEmailVerification(req, res, next) {
 
 module.exports = {
   changePassword,
+  forgotPassword,
   requestEmailVerification,
   confirmEmailVerification,
   confirmEmailChange,
   getMe,
   googleLogin,
   loginEmail,
+  resetPassword,
   requestEmailChange,
   registerEmployeeEmail,
   registerEmail,

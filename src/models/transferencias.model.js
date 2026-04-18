@@ -16,6 +16,60 @@ function getScopeCondition({ idNegocio, idUsuario }, startIndex = 1) {
   };
 }
 
+function getFechaCondition(fecha, startIndex) {
+  if (!fecha) {
+    return { sql: "", params: [] };
+  }
+
+  return {
+    sql: ` AND DATE(t.fecha_transferencia) = $${startIndex}::date`,
+    params: [fecha]
+  };
+}
+
+function getEmpleadoCondition(idEmpleado, startIndex) {
+  if (!Number.isInteger(idEmpleado)) {
+    return { sql: "", params: [] };
+  }
+
+  return {
+    sql: ` AND t.id_usuario = $${startIndex}`,
+    params: [idEmpleado]
+  };
+}
+
+function getFechaPartsCondition({ dia, mes, anio } = {}, startIndex) {
+  const conditions = [];
+  const params = [];
+  let paramIndex = startIndex;
+
+  if (Number.isInteger(dia)) {
+    conditions.push(`EXTRACT(DAY FROM DATE(t.fecha_transferencia)) = $${paramIndex}`);
+    params.push(dia);
+    paramIndex += 1;
+  }
+
+  if (Number.isInteger(mes)) {
+    conditions.push(`EXTRACT(MONTH FROM DATE(t.fecha_transferencia)) = $${paramIndex}`);
+    params.push(mes);
+    paramIndex += 1;
+  }
+
+  if (Number.isInteger(anio)) {
+    conditions.push(`EXTRACT(YEAR FROM DATE(t.fecha_transferencia)) = $${paramIndex}`);
+    params.push(anio);
+  }
+
+  if (!conditions.length) {
+    return { sql: "", params: [] };
+  }
+
+  return {
+    sql: ` AND ${conditions.join(" AND ")}`,
+    params
+  };
+}
+
 async function getTotalMontoHoy({ idNegocio, idUsuario }) {
   const scope = getScopeCondition({ idNegocio, idUsuario });
   const result = await query(
@@ -101,10 +155,13 @@ async function getTransferenciasCountLast7Days({ idNegocio, idUsuario }) {
 
 async function getTransferenciaById(idTransferencia) {
   const result = await query(
-    `SELECT id_transferencia, id_negocio, id_usuario, id_banco, client_sync_id, monto, url_comprobante,
-            fecha_transferencia, fecha_registro_servidor, observaciones, estado
-     FROM transferencias
-     WHERE id_transferencia = $1`,
+    `SELECT t.id_transferencia, t.id_negocio, t.id_usuario, u.nombre AS usuario_nombre,
+            t.id_banco, b.nombre_banco AS nombre_banco, t.client_sync_id, t.monto, t.url_comprobante,
+            t.fecha_transferencia, t.fecha_registro_servidor, t.observaciones, t.estado
+     FROM transferencias t
+     LEFT JOIN usuarios u ON u.id_usuario = t.id_usuario
+     LEFT JOIN bancos b ON b.id_banco = t.id_banco
+     WHERE t.id_transferencia = $1`,
     [idTransferencia]
   );
 
@@ -156,31 +213,46 @@ async function createTransferenciaRecord({
   return result.rows[0];
 }
 
-async function countTransferenciasByNegocio(idNegocio) {
+async function countTransferenciasByNegocio(idNegocio, { fecha, idEmpleado } = {}) {
+  const fechaCondition = getFechaCondition(fecha, 2);
+  const empleadoCondition = getEmpleadoCondition(
+    idEmpleado,
+    2 + fechaCondition.params.length
+  );
+
   const result = await query(
     `SELECT COUNT(*)::int AS total
      FROM transferencias t
      WHERE t.id_negocio = $1
-       AND t.estado = 'ACTIVO'`,
-    [idNegocio]
+       AND t.estado = 'ACTIVO'${fechaCondition.sql}${empleadoCondition.sql}`,
+    [idNegocio, ...fechaCondition.params, ...empleadoCondition.params]
   );
 
   return Number(result.rows[0]?.total || 0);
 }
 
-async function countTransferenciasByUsuario(idUsuario) {
+async function countTransferenciasByUsuario(idUsuario, { fecha } = {}) {
+  const fechaCondition = getFechaCondition(fecha, 2);
   const result = await query(
     `SELECT COUNT(*)::int AS total
      FROM transferencias t
      WHERE t.id_usuario = $1
-       AND t.estado = 'ACTIVO'`,
-    [idUsuario]
+       AND t.estado = 'ACTIVO'${fechaCondition.sql}`,
+    [idUsuario, ...fechaCondition.params]
   );
 
   return Number(result.rows[0]?.total || 0);
 }
 
-async function listTransferenciasByNegocio(idNegocio, { limit, offset }) {
+async function listTransferenciasByNegocio(idNegocio, { fecha, idEmpleado, limit, offset }) {
+  const fechaCondition = getFechaCondition(fecha, 2);
+  const empleadoCondition = getEmpleadoCondition(
+    idEmpleado,
+    2 + fechaCondition.params.length
+  );
+  const limitIndex = 2 + fechaCondition.params.length + empleadoCondition.params.length;
+  const offsetIndex = limitIndex + 1;
+
   const result = await query(
     `SELECT t.id_transferencia, t.id_negocio, t.id_usuario, u.nombre AS usuario_nombre,
             t.id_banco, t.client_sync_id, b.nombre_banco AS banco, t.monto, t.url_comprobante,
@@ -188,16 +260,20 @@ async function listTransferenciasByNegocio(idNegocio, { limit, offset }) {
      FROM transferencias t
      INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
      INNER JOIN bancos b ON b.id_banco = t.id_banco
-     WHERE t.id_negocio = $1 AND t.estado = 'ACTIVO'
+     WHERE t.id_negocio = $1 AND t.estado = 'ACTIVO'${fechaCondition.sql}${empleadoCondition.sql}
      ORDER BY t.fecha_registro_servidor DESC, t.fecha_transferencia DESC, t.id_transferencia DESC
-     LIMIT $2 OFFSET $3`,
-    [idNegocio, limit, offset]
+     LIMIT $${limitIndex} OFFSET $${offsetIndex}`,
+    [idNegocio, ...fechaCondition.params, ...empleadoCondition.params, limit, offset]
   );
 
   return result.rows;
 }
 
-async function listTransferenciasByUsuario(idUsuario, { limit, offset }) {
+async function listTransferenciasByUsuario(idUsuario, { fecha, limit, offset }) {
+  const fechaCondition = getFechaCondition(fecha, 2);
+  const limitIndex = 2 + fechaCondition.params.length;
+  const offsetIndex = limitIndex + 1;
+
   const result = await query(
     `SELECT t.id_transferencia, t.id_negocio, t.id_usuario, u.nombre AS usuario_nombre,
             t.id_banco, b.nombre_banco AS banco,
@@ -205,10 +281,30 @@ async function listTransferenciasByUsuario(idUsuario, { limit, offset }) {
      FROM transferencias t
      INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
      INNER JOIN bancos b ON b.id_banco = t.id_banco
-     WHERE t.id_usuario = $1 AND t.estado = 'ACTIVO'
+     WHERE t.id_usuario = $1 AND t.estado = 'ACTIVO'${fechaCondition.sql}
      ORDER BY t.fecha_registro_servidor DESC, t.fecha_transferencia DESC, t.id_transferencia DESC
-     LIMIT $2 OFFSET $3`,
-    [idUsuario, limit, offset]
+     LIMIT $${limitIndex} OFFSET $${offsetIndex}`,
+    [idUsuario, ...fechaCondition.params, limit, offset]
+  );
+
+  return result.rows;
+}
+
+async function listTransferenciasForReport({ idNegocio, idUsuario, dia, mes, anio }) {
+  const scope = getScopeCondition({ idNegocio, idUsuario });
+  const fechaParts = getFechaPartsCondition({ dia, mes, anio }, scope.params.length + 1);
+
+  const result = await query(
+    `SELECT t.id_transferencia, t.id_negocio, t.id_usuario, u.nombre AS usuario_nombre,
+            t.id_banco, b.nombre_banco AS banco, t.monto,
+            t.fecha_transferencia, t.fecha_registro_servidor, t.observaciones, t.estado
+     FROM transferencias t
+     INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
+     INNER JOIN bancos b ON b.id_banco = t.id_banco
+     WHERE t.estado = 'ACTIVO'
+       AND ${scope.sql}${fechaParts.sql}
+     ORDER BY t.fecha_transferencia DESC, t.fecha_registro_servidor DESC, t.id_transferencia DESC`,
+    [...scope.params, ...fechaParts.params]
   );
 
   return result.rows;
@@ -284,6 +380,7 @@ module.exports = {
   getTotalMontoHoy,
   getTransferenciasCountLast7Days,
   listTransferenciasByNegocio,
+  listTransferenciasForReport,
   listTransferenciasByUsuario,
   updateTransferenciaRecord
 };

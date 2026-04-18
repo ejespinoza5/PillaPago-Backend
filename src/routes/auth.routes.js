@@ -4,9 +4,11 @@ const {
 	changePassword,
 	confirmEmailVerification,
 	confirmEmailChange,
+	forgotPassword,
 	getMe,
 	googleLogin,
 	loginEmail,
+	resetPassword,
 	requestEmailVerification,
 	requestEmailChange,
 	registerEmployeeEmail,
@@ -23,6 +25,8 @@ router.post("/email/register", upload.single("foto_perfil"), registerEmail);
 router.post("/email/register-owner", upload.single("foto_perfil"), registerOwnerEmail);
 router.post("/email/register-employee", upload.single("foto_perfil"), registerEmployeeEmail);
 router.post("/email/login", loginEmail);
+router.post("/password/forgot", forgotPassword);
+router.post("/password/reset", resetPassword);
 router.post("/email/verify/request", requireAuth, requestEmailVerification);
 router.post("/email/verify/confirm", requireAuth, confirmEmailVerification);
 router.post("/email/change/request", requireAuth, requestEmailChange);

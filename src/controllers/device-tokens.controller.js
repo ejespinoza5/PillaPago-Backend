@@ -3,6 +3,8 @@ const {
   listActiveDeviceTokensByUsuario,
   upsertDeviceTokenRecord
 } = require("../models/device-tokens.model");
+const { getLatestUnreadWelcomeNotificationByDestinatario } = require("../models/notificaciones.model");
+const { sendPushNotificationToUser } = require("../services/fcm.service");
 
 const VALID_PLATFORMS = new Set(["android", "ios", "web"]);
 
@@ -38,6 +40,21 @@ async function registerDeviceToken(req, res, next) {
       token,
       plataforma
     });
+
+    // Si el usuario tenia una bienvenida pendiente antes de registrar el token,
+    // intentamos enviarla ahora para cubrir el flujo de registro inicial.
+    try {
+      const welcomeNotification = await getLatestUnreadWelcomeNotificationByDestinatario(idUsuario);
+
+      if (welcomeNotification) {
+        await sendPushNotificationToUser({
+          idUsuario,
+          notificacion: welcomeNotification
+        });
+      }
+    } catch (pushError) {
+      console.error("No se pudo reenviar push de bienvenida tras registrar token", pushError);
+    }
 
     return res.status(201).json({
       message: "Token de dispositivo registrado",

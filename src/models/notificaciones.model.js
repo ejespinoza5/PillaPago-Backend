@@ -82,9 +82,26 @@ async function markAllNotificacionesAsRead({ idDestinatario }) {
   return result.rowCount;
 }
 
+async function getLatestUnreadWelcomeNotificationByDestinatario(idDestinatario) {
+  const result = await query(
+    `SELECT n.id_notificacion, n.id_destinatario, n.id_actor, n.id_negocio,
+            n.tipo, n.titulo, n.mensaje, n.payload, n.leida, n.created_at
+     FROM notificaciones n
+     WHERE n.id_destinatario = $1
+       AND n.leida = false
+       AND n.tipo IN ('bienvenida_empleado', 'bienvenida_dueno')
+     ORDER BY n.created_at DESC, n.id_notificacion DESC
+     LIMIT 1`,
+    [idDestinatario]
+  );
+
+  return result.rows[0] || null;
+}
+
 module.exports = {
   countNotificacionesByDestinatario,
   createNotificacionRecord,
+  getLatestUnreadWelcomeNotificationByDestinatario,
   listNotificacionesByDestinatario,
   markAllNotificacionesAsRead,
   markNotificacionAsRead

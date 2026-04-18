@@ -1,4 +1,9 @@
-const { getUsuarioById } = require("../models/usuarios.model");
+const fs = require("fs");
+const path = require("path");
+const PDFDocument = require("pdfkit");
+
+const { getNegocioById } = require("../models/negocios.model");
+const { getOwnerByNegocioId, getUsuarioById } = require("../models/usuarios.model");
 const {
   countTransferenciasByNegocio,
   countTransferenciasByUsuario,
@@ -12,6 +17,7 @@ const {
   getTotalMontoHoy,
   isTransferenciaWithinEmployeeEditWindow,
   listTransferenciasByNegocio,
+  listTransferenciasForReport,
   listTransferenciasByUsuario,
   updateTransferenciaRecord
 } = require("../models/transferencias.model");
@@ -22,6 +28,460 @@ const EMPLEADO_EDIT_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const APP_NAME = "PillPago";
+
+const PDF_COLORS = {
+  primary: "#9EDC3A",
+  secondary: "#86C83F",
+  dark: "#111827",
+  text: "#1F2937",
+  subtleText: "#6B7280",
+  tableHeaderBg: "#E8F6CC",
+  rowAltBg: "#F9FAFB"
+};
+
+function getRequestBaseUrl(req) {
+  const fromEnv = process.env.PUBLIC_BASE_URL || process.env.BASE_URL;
+  if (fromEnv) {
+    return String(fromEnv).replace(/\/$/, "");
+  }
+
+  const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.headers["x-forwarded-host"] || req.get("host");
+  return `${proto}://${host}`.replace(/\/$/, "");
+}
+
+function normalizeTransferImageUrl(urlComprobante, req) {
+  if (!urlComprobante) {
+    return urlComprobante;
+  }
+
+  const raw = String(urlComprobante).trim();
+  const baseUrl = getRequestBaseUrl(req);
+
+  if (raw.startsWith("/imagenes-subidas/")) {
+    return `${baseUrl}${raw}`;
+  }
+
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(raw)) {
+    return raw.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, baseUrl);
+  }
+
+  return raw;
+}
+
+function parseIntOrNull(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null;
+  }
+
+  const num = Number(value);
+  return Number.isInteger(num) ? num : Number.NaN;
+}
+
+function parseReporteFechaFiltro(query) {
+  const dia = parseIntOrNull(query?.dia);
+  const mes = parseIntOrNull(query?.mes);
+  const anio = parseIntOrNull(query?.anio);
+
+  if (Number.isNaN(dia)) {
+    return { error: "dia invalido" };
+  }
+
+  if (Number.isNaN(mes)) {
+    return { error: "mes invalido" };
+  }
+
+  if (Number.isNaN(anio)) {
+    return { error: "anio invalido" };
+  }
+
+  if (dia !== null && (dia < 1 || dia > 31)) {
+    return { error: "dia invalido (1-31)" };
+  }
+
+  if (mes !== null && (mes < 1 || mes > 12)) {
+    return { error: "mes invalido (1-12)" };
+  }
+
+  if (anio !== null && (anio < 2000 || anio > 2100)) {
+    return { error: "anio invalido" };
+  }
+
+  if (dia !== null && mes !== null && anio !== null) {
+    const utcDate = new Date(Date.UTC(anio, mes - 1, dia));
+    const isValidDate = utcDate.getUTCFullYear() === anio
+      && utcDate.getUTCMonth() + 1 === mes
+      && utcDate.getUTCDate() === dia;
+
+    if (!isValidDate) {
+      return { error: "fecha invalida" };
+    }
+  }
+
+  return { dia, mes, anio };
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleString("es-EC", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat("es-EC", {
+    style: "currency",
+    currency: "USD"
+  }).format(amount);
+}
+
+function buildFiltroDescripcion({ dia, mes, anio }) {
+  const items = [];
+
+  if (dia !== null) {
+    items.push(`Dia: ${dia}`);
+  }
+
+  if (mes !== null) {
+    items.push(`Mes: ${mes}`);
+  }
+
+  if (anio !== null) {
+    items.push(`Anio: ${anio}`);
+  }
+
+  if (!items.length) {
+    return "Sin filtro de fecha";
+  }
+
+  return items.join(" | ");
+}
+
+function buildReporteSubtitulo({ dia, mes, anio }) {
+  const monthNames = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+
+  if (dia !== null && mes !== null && anio !== null) {
+    return `Reporte del dia ${dia} de ${monthNames[mes - 1]} de ${anio}`;
+  }
+
+  if (mes !== null && anio !== null) {
+    return `Reporte mensual - ${monthNames[mes - 1]} ${anio}`;
+  }
+
+  if (anio !== null && mes === null && dia === null) {
+    return `Reporte anual - ${anio}`;
+  }
+
+  if (mes !== null && anio === null && dia === null) {
+    return `Reporte por mes - ${monthNames[mes - 1]}`;
+  }
+
+  if (dia !== null && mes === null && anio === null) {
+    return `Reporte por dia del mes - ${dia}`;
+  }
+
+  if (dia !== null && mes !== null && anio === null) {
+    return `Reporte por dia y mes - ${dia} de ${monthNames[mes - 1]}`;
+  }
+
+  if (dia !== null && mes === null && anio !== null) {
+    return `Reporte por dia y anio - Dia ${dia}, ${anio}`;
+  }
+
+  if (dia === null && mes !== null && anio !== null) {
+    return `Reporte mensual del anio - ${monthNames[mes - 1]} ${anio}`;
+  }
+
+  return "Reporte general de transferencias";
+}
+
+function buildReporteFileName({ dia, mes, anio }) {
+  const monthNames = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+  ];
+
+  const today = new Date().toISOString().slice(0, 10);
+  let suffix = "general";
+
+  if (dia !== null && mes !== null && anio !== null) {
+    suffix = `${anio}-${pad2(mes)}-${pad2(dia)}`;
+  } else if (mes !== null && anio !== null) {
+    suffix = `${anio}-${pad2(mes)}-${monthNames[mes - 1]}`;
+  } else if (anio !== null && mes === null && dia === null) {
+    suffix = `anio-${anio}`;
+  } else if (mes !== null && anio === null && dia === null) {
+    suffix = `mes-${pad2(mes)}-${monthNames[mes - 1]}`;
+  } else if (dia !== null && mes === null && anio === null) {
+    suffix = `dia-${pad2(dia)}`;
+  } else if (dia !== null && mes !== null && anio === null) {
+    suffix = `dia-mes-${pad2(dia)}-${pad2(mes)}-${monthNames[mes - 1]}`;
+  } else if (dia !== null && mes === null && anio !== null) {
+    suffix = `dia-anio-${pad2(dia)}-${anio}`;
+  }
+
+  return `reporte-transferencias-${suffix}-${today}.pdf`;
+}
+
+function drawPdfHeader(doc, {
+  negocioNombre,
+  ownerNombre,
+  filtroDescripcion,
+  reporteSubtitulo,
+  totalTransferencias,
+  totalMonto
+}) {
+  const pageWidth = doc.page.width;
+  const margin = doc.page.margins.left;
+
+  doc.rect(0, 0, pageWidth, 110).fill(PDF_COLORS.dark);
+
+  const logoPath = path.resolve(__dirname, "../imagenes/solo logo.png");
+
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, margin, 24, { fit: [58, 58] });
+  }
+
+  doc
+    .fillColor(PDF_COLORS.primary)
+    .fontSize(24)
+    .font("Helvetica-Bold")
+    .text(APP_NAME, margin + 72, 28);
+
+  doc
+    .fillColor("#FFFFFF")
+    .fontSize(24)
+    .font("Helvetica-Bold")
+    .text(negocioNombre || "Negocio", margin + 72, 28, {
+      width: pageWidth - margin - doc.page.margins.right - 72,
+      align: "right"
+    });
+
+  doc
+    .fillColor("#FFFFFF")
+    .fontSize(12)
+    .font("Helvetica")
+    .text("Reporte de transferencias", margin + 72, 60);
+
+  doc
+    .fillColor(PDF_COLORS.primary)
+    .fontSize(10)
+    .font("Helvetica")
+    .text(reporteSubtitulo || "Reporte general de transferencias", margin + 72, 78);
+
+  doc
+    .fillColor(PDF_COLORS.text)
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .text(`Negocio: ${negocioNombre || "-"}`, margin, 130)
+    .text(`Propietario: ${ownerNombre || "-"}`, margin, 146);
+
+  doc
+    .font("Helvetica")
+    .fillColor(PDF_COLORS.subtleText)
+    .text(`Generado: ${formatDateTime(new Date())}`, margin, 172)
+    .text(`Filtro: ${filtroDescripcion}`, margin, 188);
+
+  const cardsY = 206;
+  const cardsGap = 12;
+  const cardsTotalWidth = pageWidth - margin - doc.page.margins.right;
+  const cardWidth = (cardsTotalWidth - cardsGap) / 2;
+  const cardHeight = 64;
+
+  doc.roundedRect(margin, cardsY, cardWidth, cardHeight, 8).fill(PDF_COLORS.tableHeaderBg);
+  doc.roundedRect(margin + cardWidth + cardsGap, cardsY, cardWidth, cardHeight, 8).fill(PDF_COLORS.rowAltBg);
+
+  doc
+    .fillColor(PDF_COLORS.subtleText)
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .text("TOTAL TRANSFERENCIAS", margin + 12, cardsY + 10, { width: cardWidth - 24, align: "left" })
+    .text("TOTAL MONTO", margin + cardWidth + cardsGap + 12, cardsY + 10, { width: cardWidth - 24, align: "left" });
+
+  doc
+    .fillColor(PDF_COLORS.dark)
+    .font("Helvetica-Bold")
+    .fontSize(24)
+    .text(String(totalTransferencias), margin + 12, cardsY + 28, { width: cardWidth - 24, align: "left" })
+    .text(formatMoney(totalMonto), margin + cardWidth + cardsGap + 12, cardsY + 28, { width: cardWidth - 24, align: "left" });
+
+  doc.moveTo(margin, 282).lineTo(pageWidth - margin, 282).strokeColor(PDF_COLORS.secondary).lineWidth(1).stroke();
+}
+
+function drawTransferenciasTable(doc, transferencias) {
+  const margin = doc.page.margins.left;
+  const tableWidth = doc.page.width - margin - doc.page.margins.right;
+  const headerHeight = 24;
+
+  const columns = [
+    { label: "Fecha", key: "fecha_transferencia", width: 78 },
+    { label: "Registrado por", key: "usuario_nombre", width: 118 },
+    { label: "Banco", key: "banco", width: 102 },
+    { label: "Monto", key: "monto", width: 72 },
+    { label: "Observacion", key: "observaciones", width: 145 }
+  ];
+
+  const drawHeader = () => {
+    const headerY = doc.y;
+
+    doc.rect(margin, headerY, tableWidth, headerHeight).fill(PDF_COLORS.tableHeaderBg);
+    doc.fillColor(PDF_COLORS.dark).fontSize(10).font("Helvetica-Bold");
+
+    let x = margin + 6;
+    columns.forEach((column) => {
+      doc.text(column.label, x, headerY + 7, { width: column.width - 10, align: "left" });
+      x += column.width;
+    });
+
+    doc.y = headerY + headerHeight;
+  };
+
+  const ensureSpace = (requiredHeight) => {
+    const bottomLimit = doc.page.height - doc.page.margins.bottom;
+
+    if (doc.y + requiredHeight > bottomLimit) {
+      doc.addPage();
+      doc.y = doc.page.margins.top;
+      drawHeader();
+    }
+  };
+
+  drawHeader();
+
+  if (!transferencias.length) {
+    ensureSpace(26);
+    doc.font("Helvetica").fillColor(PDF_COLORS.subtleText).fontSize(11).text("No existen transferencias para el filtro seleccionado.", margin + 6, doc.y + 7);
+    doc.y += 26;
+    return;
+  }
+
+  transferencias.forEach((item, index) => {
+    const values = {
+      fecha_transferencia: formatDateTime(item.fecha_transferencia),
+      usuario_nombre: item.usuario_nombre || "-",
+      banco: item.banco || "-",
+      monto: formatMoney(item.monto),
+      observaciones: item.observaciones || "-"
+    };
+
+    const rowHeight = Math.max(
+      22,
+      ...columns.map((column) => {
+        return doc.heightOfString(String(values[column.key]), {
+          width: column.width - 10,
+          align: column.key === "monto" ? "right" : "left"
+        }) + 8;
+      })
+    );
+
+    ensureSpace(rowHeight);
+
+    const rowY = doc.y;
+
+    if (index % 2 === 1) {
+      doc.rect(margin, rowY, tableWidth, rowHeight).fill(PDF_COLORS.rowAltBg);
+    }
+
+    doc.fillColor(PDF_COLORS.text).fontSize(9.5).font("Helvetica");
+
+    let x = margin + 6;
+    columns.forEach((column) => {
+      doc.text(String(values[column.key]), x, rowY + 4, {
+        width: column.width - 10,
+        align: column.key === "monto" ? "right" : "left"
+      });
+
+      x += column.width;
+    });
+
+    doc.y = rowY + rowHeight;
+  });
+}
+
+async function downloadTransferenciasReportPdf(req, res, next) {
+  try {
+    const scopeResult = await getUserTransferScope(req.auth.id_usuario);
+
+    if (scopeResult.error) {
+      return res.status(scopeResult.error.status).json({ message: scopeResult.error.message });
+    }
+
+    if (scopeResult.usuario.rol !== "dueno") {
+      return res.status(403).json({ message: "Solo el dueno puede generar reportes PDF" });
+    }
+
+    const filtroFecha = parseReporteFechaFiltro(req.query);
+
+    if (filtroFecha.error) {
+      return res.status(400).json({ message: filtroFecha.error });
+    }
+
+    const [negocio, owner] = await Promise.all([
+      getNegocioById(scopeResult.usuario.id_negocio),
+      getOwnerByNegocioId(scopeResult.usuario.id_negocio)
+    ]);
+
+    if (!negocio) {
+      return res.status(404).json({ message: "Negocio no encontrado" });
+    }
+
+    const transferencias = await listTransferenciasForReport({
+      ...scopeResult.scope,
+      dia: filtroFecha.dia,
+      mes: filtroFecha.mes,
+      anio: filtroFecha.anio
+    });
+
+    const totalMonto = transferencias.reduce((sum, item) => sum + Number(item.monto || 0), 0);
+    const filtroDescripcion = buildFiltroDescripcion(filtroFecha);
+    const reporteSubtitulo = buildReporteSubtitulo(filtroFecha);
+    const fileName = buildReporteFileName(filtroFecha);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    doc.pipe(res);
+
+    drawPdfHeader(doc, {
+      negocioNombre: negocio.nombre_negocio,
+      ownerNombre: owner?.nombre || "No disponible",
+      filtroDescripcion,
+      reporteSubtitulo,
+      totalTransferencias: transferencias.length,
+      totalMonto
+    });
+
+    doc.y = 298;
+    drawTransferenciasTable(doc, transferencias);
+
+    doc.end();
+    return null;
+  } catch (error) {
+    next(error);
+    return null;
+  }
+}
 
 function pad2(value) {
   return String(value).padStart(2, "0");
@@ -107,6 +567,67 @@ function parsePagination(query) {
     limit,
     offset: (page - 1) * limit
   };
+}
+
+function parseFechaFiltro(query) {
+  const hasDia = query?.dia !== undefined;
+  const hasMes = query?.mes !== undefined;
+  const hasAnio = query?.anio !== undefined;
+
+  // Si no envian ningun campo, no se aplica filtro por fecha.
+  if (!hasDia && !hasMes && !hasAnio) {
+    return { fecha: null };
+  }
+
+  // Si envian un campo de fecha, deben enviar dia, mes y anio juntos.
+  if (!hasDia || !hasMes || !hasAnio) {
+    return { error: "Para filtrar por fecha debes enviar dia, mes y anio" };
+  }
+
+  const dia = Number(query.dia);
+  const mes = Number(query.mes);
+  const anio = Number(query.anio);
+
+  if (!Number.isInteger(dia) || dia < 1 || dia > 31) {
+    return { error: "dia invalido (1-31)" };
+  }
+
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+    return { error: "mes invalido (1-12)" };
+  }
+
+  if (!Number.isInteger(anio) || anio < 2000 || anio > 2100) {
+    return { error: "anio invalido" };
+  }
+
+  const utcDate = new Date(Date.UTC(anio, mes - 1, dia));
+  const isValidDate = utcDate.getUTCFullYear() === anio
+    && utcDate.getUTCMonth() + 1 === mes
+    && utcDate.getUTCDate() === dia;
+
+  if (!isValidDate) {
+    return { error: "fecha invalida" };
+  }
+
+  return {
+    fecha: `${anio}-${pad2(mes)}-${pad2(dia)}`
+  };
+}
+
+function parseEmpleadoFiltro(query) {
+  const rawEmpleado = query?.id_empleado ?? query?.id_usuario;
+
+  if (rawEmpleado === undefined) {
+    return { idEmpleado: null };
+  }
+
+  const idEmpleado = Number(rawEmpleado);
+
+  if (!Number.isInteger(idEmpleado) || idEmpleado <= 0) {
+    return { error: "id_empleado invalido" };
+  }
+
+  return { idEmpleado };
 }
 
 async function getTotalTransferenciasHoy(req, res, next) {
@@ -240,9 +761,19 @@ async function getTransferenciasEstadisticaUltimos7Dias(req, res, next) {
 async function listTransferencias(req, res, next) {
   try {
     const pagination = parsePagination(req.query);
+    const filtroFecha = parseFechaFiltro(req.query);
+    const filtroEmpleado = parseEmpleadoFiltro(req.query);
 
     if (pagination.error) {
       return res.status(400).json({ message: pagination.error });
+    }
+
+    if (filtroFecha.error) {
+      return res.status(400).json({ message: filtroFecha.error });
+    }
+
+    if (filtroEmpleado.error) {
+      return res.status(400).json({ message: filtroEmpleado.error });
     }
 
     const usuario = await getUsuarioById(req.auth.id_usuario);
@@ -255,13 +786,24 @@ async function listTransferencias(req, res, next) {
       return res.status(403).json({ message: "Debes pertenecer a un negocio para ver transferencias" });
     }
 
+    if (usuario.rol === "empleado"
+      && filtroEmpleado.idEmpleado !== null
+      && filtroEmpleado.idEmpleado !== usuario.id_usuario) {
+      return res.status(403).json({ message: "Solo puedes consultar tus propias transferencias" });
+    }
+
     if (usuario.rol === "dueno") {
       const [transferencias, total] = await Promise.all([
         listTransferenciasByNegocio(usuario.id_negocio, {
+          fecha: filtroFecha.fecha,
+          idEmpleado: filtroEmpleado.idEmpleado,
           limit: pagination.limit,
           offset: pagination.offset
         }),
-        countTransferenciasByNegocio(usuario.id_negocio)
+        countTransferenciasByNegocio(usuario.id_negocio, {
+          fecha: filtroFecha.fecha,
+          idEmpleado: filtroEmpleado.idEmpleado
+        })
       ]);
 
       return res.json({
@@ -279,10 +821,13 @@ async function listTransferencias(req, res, next) {
 
     const [transferencias, total] = await Promise.all([
       listTransferenciasByUsuario(usuario.id_usuario, {
+        fecha: filtroFecha.fecha,
         limit: pagination.limit,
         offset: pagination.offset
       }),
-      countTransferenciasByUsuario(usuario.id_usuario)
+      countTransferenciasByUsuario(usuario.id_usuario, {
+        fecha: filtroFecha.fecha
+      })
     ]);
 
     return res.json({
@@ -325,9 +870,13 @@ async function getTransferenciaByIdController(req, res, next) {
     }
 
     const permission = await canEditTransferencia(result.usuario, transferencia);
+    const transferenciaResponse = {
+      ...transferencia,
+      url_comprobante: normalizeTransferImageUrl(transferencia.url_comprobante, req)
+    };
 
     return res.json({
-      ...transferencia,
+      ...transferenciaResponse,
       disponible_para_editar: permission.allowed
     });
   } catch (error) {
@@ -570,6 +1119,7 @@ async function deleteTransferencia(req, res, next) {
 module.exports = {
   createTransferencia,
   deleteTransferencia,
+  downloadTransferenciasReportPdf,
   getTransferenciaByIdController,
   getTransferenciasEstadisticaUltimos7Dias,
   getTotalTransferenciasHoy,

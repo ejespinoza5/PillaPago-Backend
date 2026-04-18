@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createTransferencia,
   deleteTransferencia,
+  downloadTransferenciasReportPdf,
   getTransferenciaByIdController,
   getTransferenciasEstadisticaUltimos7Dias,
   getTotalTransferenciasHoy,
@@ -18,6 +19,7 @@ const { upload } = require("../middlewares/upload.middleware");
 const router = express.Router();
 
 router.get("/", requireAuth, listTransferencias);
+router.get("/reporte/pdf", requireAuth, downloadTransferenciasReportPdf);
 router.get("/totales/hoy", requireAuth, getTotalTransferenciasHoy);
 router.get("/totales/dia", requireAuth, getTotalTransferenciasPorDia);
 router.get("/totales/mes", requireAuth, getTotalTransferenciasPorMes);
