@@ -463,10 +463,9 @@ async function forgotPassword(req, res, next) {
 
     const usuario = await getUsuarioAuthByEmail(email);
 
-    // Respuesta neutral para no exponer si el correo existe o no.
     if (!usuario) {
-      return res.json({
-        message: "Se envio un codigo de recuperacion al correo ingresado"
+      return res.status(404).json({
+        message: "No existe una cuenta asociada al correo ingresado"
       });
     }
 
