@@ -10,9 +10,24 @@ const JPEG_QUALITY = Number(process.env.UPLOAD_JPEG_QUALITY || 78);
 const PNG_QUALITY = Number(process.env.UPLOAD_PNG_QUALITY || 80);
 const WEBP_QUALITY = Number(process.env.UPLOAD_WEBP_QUALITY || 78);
 
-function getPublicBaseUrl() {
+function getPublicBaseUrl(req) {
   const fromEnv = process.env.PUBLIC_BASE_URL || process.env.BASE_URL;
-  const baseUrl = fromEnv || `http://localhost:${process.env.PORT || 3000}`;
+  if (fromEnv) {
+    return String(fromEnv).replace(/\/$/, "");
+  }
+
+  if (req) {
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+    const proto = forwardedProto || req.protocol || "http";
+    const host = forwardedHost || req.get("host");
+
+    if (host) {
+      return `${proto}://${host}`.replace(/\/$/, "");
+    }
+  }
+
+  const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
   return String(baseUrl).replace(/\/$/, "");
 }
 
@@ -60,7 +75,7 @@ async function optimizeImageBuffer({ buffer, maxWidth }) {
   };
 }
 
-async function saveImageLocally({ relativePath, buffer }) {
+async function saveImageLocally({ relativePath, buffer, req }) {
   const absolutePath = path.join(UPLOADS_ROOT, relativePath);
   const dir = path.dirname(absolutePath);
 
@@ -69,7 +84,7 @@ async function saveImageLocally({ relativePath, buffer }) {
 
   const normalizedRelativePath = relativePath.replace(/\\/g, "/");
   const imagePathForUrl = encodeURI(normalizedRelativePath);
-  const publicBaseUrl = getPublicBaseUrl();
+  const publicBaseUrl = getPublicBaseUrl(req);
 
   return {
     imagePath: absolutePath,
@@ -77,7 +92,7 @@ async function saveImageLocally({ relativePath, buffer }) {
   };
 }
 
-async function uploadTransferImage({ buffer, mimeType, originalName, idNegocio, idUsuario }) {
+async function uploadTransferImage({ buffer, mimeType, originalName, idNegocio, idUsuario, req }) {
   let optimizedBuffer = buffer;
   let extension = path.extname(originalName || "") || getExtensionFromMimeType(mimeType);
 
@@ -96,11 +111,12 @@ async function uploadTransferImage({ buffer, mimeType, originalName, idNegocio, 
 
   return saveImageLocally({
     relativePath: filePath,
-    buffer: optimizedBuffer
+    buffer: optimizedBuffer,
+    req
   });
 }
 
-async function uploadUserProfileImage({ buffer, mimeType, originalName, email }) {
+async function uploadUserProfileImage({ buffer, mimeType, originalName, email, req }) {
   let optimizedBuffer = buffer;
   let extension = path.extname(originalName || "") || getExtensionFromMimeType(mimeType);
 
@@ -120,7 +136,8 @@ async function uploadUserProfileImage({ buffer, mimeType, originalName, email })
 
   return saveImageLocally({
     relativePath: filePath,
-    buffer: optimizedBuffer
+    buffer: optimizedBuffer,
+    req
   });
 }
 

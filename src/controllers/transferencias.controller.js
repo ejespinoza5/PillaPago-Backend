@@ -935,7 +935,8 @@ async function createTransferencia(req, res, next) {
       mimeType: req.file.mimetype,
       originalName: req.file.originalname,
       idNegocio: usuario.id_negocio,
-      idUsuario: usuario.id_usuario
+      idUsuario: usuario.id_usuario,
+      req
     });
 
     const transferencia = await createTransferenciaRecord({
@@ -1062,7 +1063,8 @@ async function updateTransferencia(req, res, next) {
         mimeType: req.file.mimetype,
         originalName: req.file.originalname,
         idNegocio: usuario.id_negocio,
-        idUsuario: usuario.id_usuario
+        idUsuario: usuario.id_usuario,
+        req
       });
 
       updates.imageUrl = uploadResult.imageUrl;

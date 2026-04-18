@@ -200,7 +200,8 @@ async function updateAuthenticatedUsuarioProfile(req, res, next) {
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
         originalName: req.file.originalname,
-        email: usuarioActual.email
+        email: usuarioActual.email,
+        req
       });
 
       fotoPerfilUrl = uploadResult.imageUrl;

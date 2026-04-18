@@ -284,7 +284,8 @@ async function handleEmailRegistration(req, res, next, mode = "general") {
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
         originalName: req.file.originalname,
-        email
+        email,
+        req
       });
       fotoPerfilUrl = uploadResult.imageUrl;
     }
