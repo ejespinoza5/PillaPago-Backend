@@ -1,7 +1,5 @@
 const { query } = require("../config/database");
 
-const APP_TIMEZONE = process.env.APP_TIMEZONE || "America/Guayaquil";
-
 function getScopeCondition({ idNegocio, idUsuario }, startIndex = 1) {
   if (Number.isInteger(idNegocio)) {
     return {
@@ -77,8 +75,8 @@ async function getTotalMontoHoy({ idNegocio, idUsuario }) {
      FROM transferencias t
      WHERE t.estado = 'ACTIVO'
        AND ${scope.sql}
-       AND DATE(t.fecha_transferencia) = DATE(NOW() AT TIME ZONE $${scope.params.length + 1})`,
-    [...scope.params, APP_TIMEZONE]
+       AND DATE(t.fecha_transferencia) = CURRENT_DATE`,
+    scope.params
   );
 
   return Number(result.rows[0]?.total || 0);
@@ -128,12 +126,12 @@ async function getTotalMontoByAnio({ anio, idNegocio, idUsuario }) {
 }
 
 async function getTransferenciasCountLast7Days({ idNegocio, idUsuario }) {
-  const scope = getScopeCondition({ idNegocio, idUsuario }, 2);
+  const scope = getScopeCondition({ idNegocio, idUsuario }, 1);
   const result = await query(
     `WITH dias AS (
        SELECT generate_series(
-         DATE(NOW() AT TIME ZONE $1) - INTERVAL '6 days',
-         DATE(NOW() AT TIME ZONE $1),
+         CURRENT_DATE - INTERVAL '6 days',
+         CURRENT_DATE,
          INTERVAL '1 day'
        )::date AS fecha
      )
@@ -147,7 +145,7 @@ async function getTransferenciasCountLast7Days({ idNegocio, idUsuario }) {
       AND ${scope.sql}
      GROUP BY d.fecha
      ORDER BY d.fecha ASC`,
-    [APP_TIMEZONE, ...scope.params]
+    scope.params
   );
 
   return result.rows;
@@ -198,7 +196,20 @@ async function createTransferenciaRecord({
   const result = await query(
     `INSERT INTO transferencias 
      (id_transferencia, id_negocio, id_usuario, id_banco, client_sync_id, monto, url_comprobante, fecha_transferencia, observaciones)
-     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8)
+     VALUES (
+       gen_random_uuid(),
+       $1,
+       $2,
+       $3,
+       $4,
+       $5,
+       $6,
+       CASE
+         WHEN $7::text ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ($7::date + LOCALTIME)::timestamp
+         ELSE $7::timestamp
+       END,
+       $8
+     )
      ON CONFLICT (id_usuario, client_sync_id) WHERE client_sync_id IS NOT NULL
      DO UPDATE SET
        id_banco = EXCLUDED.id_banco,
@@ -326,7 +337,10 @@ async function updateTransferenciaRecord(idTransferencia, updates) {
 
   if (updates.fechaTransferencia !== undefined) {
     values.push(updates.fechaTransferencia);
-    sets.push(`fecha_transferencia = $${values.length}`);
+    sets.push(`fecha_transferencia = CASE
+      WHEN $${values.length}::text ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN ($${values.length}::date + LOCALTIME)::timestamp
+      ELSE $${values.length}::timestamp
+    END`);
   }
 
   if (updates.observaciones !== undefined) {

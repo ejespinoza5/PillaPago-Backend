@@ -494,8 +494,8 @@ function normalizeFechaTransferencia(fechaTransferenciaRaw) {
     return null;
   }
 
-  // Si viene solo fecha (YYYY-MM-DD), la guardamos como timestamp sin zona
-  // para evitar desfase de un dia por conversion UTC/local.
+  // Si viene solo fecha (YYYY-MM-DD), devolvemos solo fecha valida.
+  // El modelo completa la hora con el reloj del servidor PostgreSQL.
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     const [year, month, day] = raw.split("-").map(Number);
     const utcDate = new Date(Date.UTC(year, month - 1, day));
@@ -508,7 +508,7 @@ function normalizeFechaTransferencia(fechaTransferenciaRaw) {
       return null;
     }
 
-    return `${raw} 00:00:00`;
+    return raw;
   }
 
   const parsed = new Date(raw);

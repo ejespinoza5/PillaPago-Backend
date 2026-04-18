@@ -1,5 +1,5 @@
 function buildEmailLayout({ title, subtitle, bodyHtml }) {
-  const logoUrl = "https://qoinlejohyevfvwtmpba.supabase.co/storage/v1/object/public/pillapago/logos/logo%20remarcado.png";
+  const logoUrl = process.env.EMAIL_LOGO_URL || "";
   const brandGreen = "#a5d63f";
   const brandDark = "#0b0f14";
   const cardBackground = "#111827";
@@ -13,7 +13,9 @@ function buildEmailLayout({ title, subtitle, bodyHtml }) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:${cardBackground};border:1px solid #1f2937;border-radius:16px;overflow:hidden;">
             <tr>
               <td style="padding:24px 24px 8px 24px;text-align:center;">
-                <img src="${logoUrl}" alt="PillaPago" style="max-width:220px;height:auto;display:inline-block;" />
+                ${logoUrl
+                  ? `<img src="${logoUrl}" alt="PillaPago" style="max-width:220px;height:auto;display:inline-block;" />`
+                  : ""}
               </td>
             </tr>
             <tr>

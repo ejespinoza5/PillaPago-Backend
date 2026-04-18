@@ -7,7 +7,7 @@ Permite:
 - que un dueno registre su negocio y obtenga codigo de invitacion
 - que empleados se unan con ese codigo
 - que los empleados suban comprobantes con imagen, monto y banco
-- guardar imagenes en Supabase Storage y metadata en PostgreSQL
+- guardar imagenes en almacenamiento local y metadata en PostgreSQL
 
 ## Estructura
 
@@ -41,13 +41,12 @@ Permite:
 - DATABASE_URL=postgresql://...
 - GOOGLE_CLIENT_ID=tu_google_client_id.apps.googleusercontent.com
 - JWT_SECRET=secreto_para_firmar_tokens
-- SUPABASE_URL=https://tu-proyecto.supabase.co
-- SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key
-- SUPABASE_STORAGE_BUCKET=imagenes
 - FCM_ENABLED=true
 - FCM_PROJECT_ID=tu-project-id-firebase
 - FCM_CLIENT_EMAIL=firebase-adminsdk-xxxx@tu-project-id.iam.gserviceaccount.com
 - FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+
+ - EMAIL_LOGO_URL=https://tu-dominio.com/logo.png (opcional)
 
 ## Configurar Push Con FCM
 
@@ -126,7 +125,7 @@ Campos form-data:
 Reglas:
 
 - Debes enviar al menos uno: nombre o foto_perfil.
-- Si envias foto_perfil, se sube a Supabase y se guarda la URL publica en el usuario autenticado.
+- Si envias foto_perfil, se guarda de forma local y se registra la URL publica en el usuario autenticado.
 
 ### Autenticacion Google
 
@@ -183,7 +182,7 @@ Campos form-data:
 - password: Abcde1@
 - nombre_negocio: Mi Tienda (opcional, para registrar dueno)
 - codigo_invitacion: INVITA123 (opcional, para registrar empleado)
-- foto_perfil: archivo imagen (opcional, se guarda en Supabase)
+- foto_perfil: archivo imagen (opcional, se guarda localmente)
 
 Reglas:
 

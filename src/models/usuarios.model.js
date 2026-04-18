@@ -1,7 +1,5 @@
 const { query } = require("../config/database");
 
-const APP_TIMEZONE = process.env.APP_TIMEZONE || "America/Guayaquil";
-
 async function listUsuariosRecords({ idNegocio }) {
   const params = [];
   let whereClause = "";
@@ -78,18 +76,16 @@ async function getUsuarioProfileById(idUsuario) {
          COUNT(*)::int AS total_transferencias,
          COALESCE(SUM(t.monto), 0)::numeric AS total_monto,
          COUNT(*) FILTER (
-           WHERE DATE(t.fecha_transferencia) = DATE(NOW() AT TIME ZONE '${APP_TIMEZONE}')
+           WHERE DATE(t.fecha_transferencia) = CURRENT_DATE
          )::int AS transferencias_hoy,
          COALESCE(SUM(t.monto) FILTER (
-           WHERE DATE(t.fecha_transferencia) = DATE(NOW() AT TIME ZONE '${APP_TIMEZONE}')
+           WHERE DATE(t.fecha_transferencia) = CURRENT_DATE
          ), 0)::numeric AS monto_hoy,
          COUNT(*) FILTER (
-           WHERE EXTRACT(YEAR FROM DATE(t.fecha_transferencia)) = EXTRACT(YEAR FROM DATE(NOW() AT TIME ZONE '${APP_TIMEZONE}'))
-             AND EXTRACT(MONTH FROM DATE(t.fecha_transferencia)) = EXTRACT(MONTH FROM DATE(NOW() AT TIME ZONE '${APP_TIMEZONE}'))
+           WHERE date_trunc('month', t.fecha_transferencia) = date_trunc('month', NOW())
          )::int AS transferencias_mes_actual,
          COALESCE(SUM(t.monto) FILTER (
-           WHERE EXTRACT(YEAR FROM DATE(t.fecha_transferencia)) = EXTRACT(YEAR FROM DATE(NOW() AT TIME ZONE '${APP_TIMEZONE}'))
-             AND EXTRACT(MONTH FROM DATE(t.fecha_transferencia)) = EXTRACT(MONTH FROM DATE(NOW() AT TIME ZONE '${APP_TIMEZONE}'))
+           WHERE date_trunc('month', t.fecha_transferencia) = date_trunc('month', NOW())
          ), 0)::numeric AS monto_mes_actual,
          MAX(t.fecha_transferencia) AS ultima_transferencia_fecha
        FROM transferencias t

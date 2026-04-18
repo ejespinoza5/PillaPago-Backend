@@ -334,7 +334,6 @@ async function handleEmailRegistration(req, res, next, mode = "general") {
 
     const verificationCode = generateNumericCode(6);
     const verificationCodeHash = hashCode(verificationCode);
-    const verificationExpiresAt = new Date(Date.now() + EMAIL_VERIFY_CODE_TTL_MINUTES * 60 * 1000);
 
     let verificationEmailSent = false;
     let verificationEmailError = null;
@@ -353,7 +352,7 @@ async function handleEmailRegistration(req, res, next, mode = "general") {
         idUsuario: usuario.id_usuario,
         newEmail: null,
         codeHash: verificationCodeHash,
-        expiresAt: verificationExpiresAt
+        ttlMinutes: EMAIL_VERIFY_CODE_TTL_MINUTES
       });
 
       await sendVerificationCodeEmail({
@@ -472,7 +471,6 @@ async function forgotPassword(req, res, next) {
 
     const code = generateNumericCode(6);
     const codeHash = hashCode(code);
-    const expiresAt = new Date(Date.now() + PASSWORD_RESET_CODE_TTL_MINUTES * 60 * 1000);
 
     await invalidateEmailCodes({
       purpose: PASSWORD_RESET_PURPOSE,
@@ -487,7 +485,7 @@ async function forgotPassword(req, res, next) {
       idUsuario: usuario.id_usuario,
       newEmail: null,
       codeHash,
-      expiresAt
+      ttlMinutes: PASSWORD_RESET_CODE_TTL_MINUTES
     });
 
     await sendPasswordResetCodeEmail({
@@ -707,7 +705,6 @@ async function requestEmailChange(req, res, next) {
 
     const code = generateNumericCode(6);
     const codeHash = hashCode(code);
-    const expiresAt = new Date(Date.now() + EMAIL_CHANGE_CODE_TTL_MINUTES * 60 * 1000);
 
     await invalidateEmailCodes({
       purpose: EMAIL_CHANGE_PURPOSE,
@@ -722,7 +719,7 @@ async function requestEmailChange(req, res, next) {
       idUsuario,
       newEmail,
       codeHash,
-      expiresAt
+      ttlMinutes: EMAIL_CHANGE_CODE_TTL_MINUTES
     });
 
     await sendEmailChangeCodeEmail({
@@ -858,7 +855,6 @@ async function requestEmailVerification(req, res, next) {
 
     const verificationCode = generateNumericCode(6);
     const verificationCodeHash = hashCode(verificationCode);
-    const verificationExpiresAt = new Date(Date.now() + EMAIL_VERIFY_CODE_TTL_MINUTES * 60 * 1000);
 
     await invalidateEmailCodes({
       purpose: EMAIL_VERIFY_PURPOSE,
@@ -873,7 +869,7 @@ async function requestEmailVerification(req, res, next) {
       idUsuario,
       newEmail: null,
       codeHash: verificationCodeHash,
-      expiresAt: verificationExpiresAt
+      ttlMinutes: EMAIL_VERIFY_CODE_TTL_MINUTES
     });
 
     await sendVerificationCodeEmail({
