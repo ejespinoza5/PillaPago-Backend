@@ -28,7 +28,7 @@ const EMPLEADO_EDIT_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
-const APP_NAME = "PillPago";
+const APP_NAME = "PillaPago";
 
 const PDF_COLORS = {
   primary: "#9EDC3A",
