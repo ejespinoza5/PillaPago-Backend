@@ -1,6 +1,14 @@
 const { query } = require("../config/database");
 
 async function upsertDeviceTokenRecord({ idUsuario, token, plataforma }) {
+  // Un dispositivo solo recibe notificaciones de la ultima cuenta que inicio sesion en el.
+  await query(
+    `UPDATE device_tokens
+     SET activo = false, updated_at = CURRENT_TIMESTAMP
+     WHERE token = $1 AND id_usuario <> $2 AND activo = true`,
+    [token, idUsuario]
+  );
+
   const result = await query(
     `INSERT INTO device_tokens (id_usuario, token, plataforma, activo)
      VALUES ($1, $2, $3, true)

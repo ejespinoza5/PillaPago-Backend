@@ -1,3 +1,4 @@
+const { checkEmployeeQuota } = require("../services/employee-quota.service");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
@@ -324,6 +325,11 @@ async function handleEmailRegistration(req, res, next, mode = "general") {
 
       if (!negocio) {
         return res.status(404).json({ message: "Codigo de invitacion invalido" });
+      }
+
+      const sinCupo = await checkEmployeeQuota(negocio.id_negocio);
+      if (sinCupo) {
+        return res.status(403).json({ message: sinCupo, reason: "employee_limit" });
       }
 
       idNegocio = negocio.id_negocio;

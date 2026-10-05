@@ -1,3 +1,4 @@
+const { checkEmployeeQuota } = require("../services/employee-quota.service");
 const {
   countActiveEmployeesByNegocio,
   countInactiveEmployeesByNegocio,
@@ -212,6 +213,14 @@ async function reactivateEmployee(req, res, next) {
 
     if (!Number.isInteger(idEmpleado) || idEmpleado <= 0) {
       return res.status(400).json({ message: "id de empleado invalido" });
+    }
+
+    const sinCupo = await checkEmployeeQuota(scope.idNegocio);
+    if (sinCupo) {
+      return res.status(403).json({
+        message: "No tienes cupos libres. Desbloquea uno mas para reactivar a este empleado.",
+        reason: "employee_limit"
+      });
     }
 
     const empleado = await reactivateEmployeeByOwner({

@@ -19,6 +19,11 @@ function getFechaCondition(fecha, startIndex) {
     return { sql: "", params: [] };
   }
 
+  // Filtro parcial { mes, anio } o { anio }.
+  if (typeof fecha === "object") {
+    return getFechaPartsCondition(fecha, startIndex);
+  }
+
   return {
     sql: ` AND DATE(t.fecha_transferencia) = $${startIndex}::date`,
     params: [fecha]

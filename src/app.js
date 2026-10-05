@@ -16,6 +16,14 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// Archivos publicos: version.json (control de actualizaciones) y APK en /descargas.
+const PUBLIC_ROOT = path.join(__dirname, "..", "public");
+app.get("/version.json", (_req, res) => {
+  res.set("Cache-Control", "no-cache");
+  res.sendFile(path.join(PUBLIC_ROOT, "version.json"));
+});
+app.use("/descargas", express.static(path.join(PUBLIC_ROOT, "descargas")));
+
 app.use("/api", apiRoutes);
 
 app.use((err, _req, res, _next) => {

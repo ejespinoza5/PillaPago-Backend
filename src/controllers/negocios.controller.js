@@ -1,3 +1,4 @@
+const { checkEmployeeQuota, getEmployeeQuota, registerAdWatched } = require("../services/employee-quota.service");
 const {
   createNegocioRecord,
   getNegocioByCodigoInvitacion,
@@ -145,6 +146,11 @@ async function joinNegocioByCode(req, res, next) {
       return res.status(404).json({ message: "Codigo de invitacion invalido" });
     }
 
+    const sinCupo = await checkEmployeeQuota(negocio.id_negocio);
+    if (sinCupo) {
+      return res.status(403).json({ message: sinCupo, reason: "employee_limit" });
+    }
+
     const usuarioActualizado = await assignUsuarioToNegocio({
       idUsuario: usuario.id_usuario,
       idNegocio: negocio.id_negocio,
@@ -178,8 +184,40 @@ async function joinNegocioByCode(req, res, next) {
   }
 }
 
+async function getOwnerNegocioId(idUsuario) {
+  const usuario = await getUsuarioById(idUsuario);
+  if (!usuario?.id_negocio || usuario.rol !== "dueno") return null;
+  return usuario.id_negocio;
+}
+
+async function getMyEmployeeQuota(req, res, next) {
+  try {
+    const idNegocio = await getOwnerNegocioId(req.auth.id_usuario);
+    if (!idNegocio) {
+      return res.status(403).json({ message: "Solo el dueno puede ver los cupos" });
+    }
+    res.json(await getEmployeeQuota(idNegocio));
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function registerMyAdWatched(req, res, next) {
+  try {
+    const idNegocio = await getOwnerNegocioId(req.auth.id_usuario);
+    if (!idNegocio) {
+      return res.status(403).json({ message: "Solo el dueno puede desbloquear cupos" });
+    }
+    res.json(await registerAdWatched(idNegocio));
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createNegocio,
+  getMyEmployeeQuota,
+  registerMyAdWatched,
   getNegocio,
   joinNegocioByCode,
   listNegocios,

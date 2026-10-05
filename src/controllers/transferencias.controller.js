@@ -253,79 +253,115 @@ function drawPdfHeader(doc, {
 }) {
   const pageWidth = doc.page.width;
   const margin = doc.page.margins.left;
+  const contentWidth = pageWidth - margin - doc.page.margins.right;
 
-  doc.rect(0, 0, pageWidth, 110).fill(PDF_COLORS.dark);
+  // Franja superior con la marca
+  doc.rect(0, 0, pageWidth, 6).fill(PDF_COLORS.secondary);
 
   const logoPath = path.resolve(__dirname, "../imagenes/solo logo.png");
-
   if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, margin, 24, { fit: [58, 58] });
+    doc.image(logoPath, margin, 30, { fit: [34, 34] });
   }
+  doc.font("Helvetica").fontSize(16).fillColor(PDF_COLORS.dark)
+    .text("Pilla", margin + 44, 38, { continued: true })
+    .font("Helvetica-Bold").fillColor(PDF_COLORS.secondary).text("Pago");
 
-  doc
-    .fillColor(PDF_COLORS.primary)
-    .fontSize(24)
-    .font("Helvetica-Bold")
-    .text(APP_NAME, margin + 72, 28);
+  doc.font("Helvetica").fontSize(9).fillColor(PDF_COLORS.subtleText)
+    .text(`Generado el ${formatDateTime(new Date())}`, margin, 42, { width: contentWidth, align: "right" });
 
-  doc
-    .fillColor("#FFFFFF")
-    .fontSize(24)
-    .font("Helvetica-Bold")
-    .text(negocioNombre || "Negocio", margin + 72, 28, {
-      width: pageWidth - margin - doc.page.margins.right - 72,
-      align: "right"
+  // Titulo
+  doc.font("Helvetica-Bold").fontSize(20).fillColor(PDF_COLORS.dark)
+    .text("Reporte de transferencias", margin, 88, { width: contentWidth });
+  doc.font("Helvetica").fontSize(11).fillColor(PDF_COLORS.subtleText)
+    .text(`${negocioNombre || "Negocio"}  ·  ${reporteSubtitulo || filtroDescripcion}`, margin, 114, { width: contentWidth });
+  doc.fontSize(9).text(`Propietario: ${ownerNombre || "-"}   ·   Filtro: ${filtroDescripcion}`, margin, 132, { width: contentWidth });
+
+  // Indicadores
+  const cardsY = 160;
+  const gap = 10;
+  const cardWidth = (contentWidth - gap * 2) / 3;
+  const promedio = totalTransferencias ? totalMonto / totalTransferencias : 0;
+  [
+    ["TOTAL RECIBIDO", formatMoney(totalMonto), true],
+    ["TRANSFERENCIAS", String(totalTransferencias), false],
+    ["PROMEDIO", formatMoney(promedio), false]
+  ].forEach(([label, value, destacado], i) => {
+    const x = margin + i * (cardWidth + gap);
+    doc.roundedRect(x, cardsY, cardWidth, 58, 8)
+      .fill(destacado ? PDF_COLORS.tableHeaderBg : PDF_COLORS.rowAltBg);
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(PDF_COLORS.subtleText)
+      .text(label, x + 12, cardsY + 11, { width: cardWidth - 24, characterSpacing: 0.5 });
+    doc.font("Helvetica-Bold").fontSize(17).fillColor(PDF_COLORS.dark)
+      .text(value, x + 12, cardsY + 27, { width: cardWidth - 24 });
+  });
+
+  doc.y = cardsY + 78;
+}
+
+/** Tabla corta de totales agrupados (por banco o por empleado). */
+function drawResumen(doc, titulo, transferencias, key) {
+  const grupos = new Map();
+  transferencias.forEach((t) => {
+    const k = t[key] || "-";
+    const g = grupos.get(k) || { cantidad: 0, monto: 0 };
+    g.cantidad += 1;
+    g.monto += Number(t.monto || 0);
+    grupos.set(k, g);
+  });
+  if (!grupos.size) return;
+
+  const margin = doc.page.margins.left;
+  const width = (doc.page.width - margin - doc.page.margins.right - 12) / 2;
+  return { titulo, filas: [...grupos.entries()].sort((a, b) => b[1].monto - a[1].monto), width };
+}
+
+function drawResumenes(doc, transferencias) {
+  const resumenes = [
+    drawResumen(doc, "Por banco", transferencias, "banco"),
+    drawResumen(doc, "Por empleado", transferencias, "usuario_nombre")
+  ].filter(Boolean);
+  if (!resumenes.length) return;
+
+  const margin = doc.page.margins.left;
+  const startY = doc.y;
+  let maxY = startY;
+
+  resumenes.forEach((r, i) => {
+    const x = margin + i * (r.width + 12);
+    let y = startY;
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(PDF_COLORS.dark).text(r.titulo, x, y);
+    y += 18;
+    r.filas.slice(0, 8).forEach(([nombre, g]) => {
+      doc.moveTo(x, y).lineTo(x + r.width, y).strokeColor("#E5E7EB").lineWidth(0.5).stroke();
+      doc.font("Helvetica").fontSize(9).fillColor(PDF_COLORS.text)
+        .text(`${nombre} (${g.cantidad})`, x, y + 5, { width: r.width - 80, ellipsis: true, lineBreak: false });
+      doc.font("Helvetica-Bold")
+        .text(formatMoney(g.monto), x + r.width - 80, y + 5, { width: 80, align: "right" });
+      y += 20;
     });
+    maxY = Math.max(maxY, y);
+  });
 
-  doc
-    .fillColor("#FFFFFF")
-    .fontSize(12)
-    .font("Helvetica")
-    .text("Reporte de transferencias", margin + 72, 60);
+  doc.y = maxY + 20;
+  doc.font("Helvetica-Bold").fontSize(11).fillColor(PDF_COLORS.dark).text("Detalle", margin, doc.y);
+  doc.y += 8;
+}
 
-  doc
-    .fillColor(PDF_COLORS.primary)
-    .fontSize(10)
-    .font("Helvetica")
-    .text(reporteSubtitulo || "Reporte general de transferencias", margin + 72, 78);
-
-  doc
-    .fillColor(PDF_COLORS.text)
-    .fontSize(11)
-    .font("Helvetica-Bold")
-    .text(`Negocio: ${negocioNombre || "-"}`, margin, 130)
-    .text(`Propietario: ${ownerNombre || "-"}`, margin, 146);
-
-  doc
-    .font("Helvetica")
-    .fillColor(PDF_COLORS.subtleText)
-    .text(`Generado: ${formatDateTime(new Date())}`, margin, 172)
-    .text(`Filtro: ${filtroDescripcion}`, margin, 188);
-
-  const cardsY = 206;
-  const cardsGap = 12;
-  const cardsTotalWidth = pageWidth - margin - doc.page.margins.right;
-  const cardWidth = (cardsTotalWidth - cardsGap) / 2;
-  const cardHeight = 64;
-
-  doc.roundedRect(margin, cardsY, cardWidth, cardHeight, 8).fill(PDF_COLORS.tableHeaderBg);
-  doc.roundedRect(margin + cardWidth + cardsGap, cardsY, cardWidth, cardHeight, 8).fill(PDF_COLORS.rowAltBg);
-
-  doc
-    .fillColor(PDF_COLORS.subtleText)
-    .font("Helvetica-Bold")
-    .fontSize(10)
-    .text("TOTAL TRANSFERENCIAS", margin + 12, cardsY + 10, { width: cardWidth - 24, align: "left" })
-    .text("TOTAL MONTO", margin + cardWidth + cardsGap + 12, cardsY + 10, { width: cardWidth - 24, align: "left" });
-
-  doc
-    .fillColor(PDF_COLORS.dark)
-    .font("Helvetica-Bold")
-    .fontSize(24)
-    .text(String(totalTransferencias), margin + 12, cardsY + 28, { width: cardWidth - 24, align: "left" })
-    .text(formatMoney(totalMonto), margin + cardWidth + cardsGap + 12, cardsY + 28, { width: cardWidth - 24, align: "left" });
-
-  doc.moveTo(margin, 282).lineTo(pageWidth - margin, 282).strokeColor(PDF_COLORS.secondary).lineWidth(1).stroke();
+/** Pie de pagina con numeracion en todas las paginas. */
+function drawPdfFooters(doc, negocioNombre) {
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    doc.switchToPage(i);
+    const margin = doc.page.margins.left;
+    const y = doc.page.height - 30;
+    const width = doc.page.width - margin - doc.page.margins.right;
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.font("Helvetica").fontSize(8).fillColor(PDF_COLORS.subtleText)
+      .text(`PillaPago · ${negocioNombre || ""}`, margin, y, { width, align: "left", lineBreak: false })
+      .text(`Página ${i + 1} de ${range.count}`, margin, y, { width, align: "right", lineBreak: false });
+    doc.page.margins.bottom = bottom;
+  }
 }
 
 function drawTransferenciasTable(doc, transferencias) {
@@ -344,8 +380,8 @@ function drawTransferenciasTable(doc, transferencias) {
   const drawHeader = () => {
     const headerY = doc.y;
 
-    doc.rect(margin, headerY, tableWidth, headerHeight).fill(PDF_COLORS.tableHeaderBg);
-    doc.fillColor(PDF_COLORS.dark).fontSize(10).font("Helvetica-Bold");
+    doc.rect(margin, headerY, tableWidth, headerHeight).fill(PDF_COLORS.dark);
+    doc.fillColor("#FFFFFF").fontSize(9).font("Helvetica-Bold");
 
     let x = margin + 6;
     columns.forEach((column) => {
@@ -460,7 +496,7 @@ async function downloadTransferenciasReportPdf(req, res, next) {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
-    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true });
     doc.pipe(res);
 
     drawPdfHeader(doc, {
@@ -472,8 +508,9 @@ async function downloadTransferenciasReportPdf(req, res, next) {
       totalMonto
     });
 
-    doc.y = 298;
+    drawResumenes(doc, transferencias);
     drawTransferenciasTable(doc, transferencias);
+    drawPdfFooters(doc, negocio.nombre_negocio);
 
     doc.end();
     return null;
@@ -579,9 +616,21 @@ function parseFechaFiltro(query) {
     return { fecha: null };
   }
 
-  // Si envian un campo de fecha, deben enviar dia, mes y anio juntos.
-  if (!hasDia || !hasMes || !hasAnio) {
-    return { error: "Para filtrar por fecha debes enviar dia, mes y anio" };
+  // Combinaciones validas: anio | mes + anio | dia + mes + anio.
+  if (!hasAnio || (hasDia && !hasMes)) {
+    return { error: "Para filtrar por fecha envia anio, mes y anio, o dia, mes y anio" };
+  }
+
+  if (!hasDia) {
+    const anio = Number(query.anio);
+    const mes = hasMes ? Number(query.mes) : null;
+    if (!Number.isInteger(anio) || anio < 2000 || anio > 2100) {
+      return { error: "anio invalido" };
+    }
+    if (hasMes && (!Number.isInteger(mes) || mes < 1 || mes > 12)) {
+      return { error: "mes invalido (1-12)" };
+    }
+    return { fecha: { anio, ...(hasMes ? { mes } : {}) } };
   }
 
   const dia = Number(query.dia);
