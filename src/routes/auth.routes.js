@@ -8,6 +8,8 @@ const {
 	getMe,
 	googleLogin,
 	loginEmail,
+	logout,
+	refreshSession,
 	resetPassword,
 	requestEmailVerification,
 	requestEmailChange,
@@ -25,6 +27,8 @@ router.post("/email/register", upload.single("foto_perfil"), registerEmail);
 router.post("/email/register-owner", upload.single("foto_perfil"), registerOwnerEmail);
 router.post("/email/register-employee", upload.single("foto_perfil"), registerEmployeeEmail);
 router.post("/email/login", loginEmail);
+router.post("/refresh", refreshSession);
+router.post("/logout", logout);
 router.post("/password/forgot", forgotPassword);
 router.post("/password/reset", resetPassword);
 router.post("/email/verify/request", requireAuth, requestEmailVerification);

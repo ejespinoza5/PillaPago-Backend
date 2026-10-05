@@ -18,6 +18,9 @@ const {
   getUsuarioAuthById,
   getUsuarioAuthByEmail,
   getUsuarioById,
+  getActiveRefreshTokenRecord,
+  revokeRefreshTokenRecord,
+  storeRefreshTokenRecord,
   updateUsuarioPassword,
   updateUsuarioEmail,
   verifyUsuarioEmail,
@@ -43,6 +46,7 @@ const PASSWORD_RESET_PURPOSE = "password_reset";
 const PASSWORD_RESET_CODE_TTL_MINUTES = 10;
 const EMAIL_VERIFY_PURPOSE = "email_verification";
 const EMAIL_VERIFY_CODE_TTL_MINUTES = 10;
+const REFRESH_TOKEN_TTL_DAYS = 60;
 
 function hashCode(code) {
   return crypto.createHash("sha256").update(String(code)).digest("hex");
@@ -133,6 +137,54 @@ function signToken(usuario) {
   );
 }
 
+// Refresh token con formato "<id_usuario>.<secreto>"; solo se guarda el hash.
+async function issueRefreshToken(idUsuario) {
+  const secret = crypto.randomBytes(48).toString("hex");
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  await storeRefreshTokenRecord({ idUsuario, tokenHash: hashCode(secret), expiresAt });
+  return `${idUsuario}.${secret}`;
+}
+
+async function refreshSession(req, res, next) {
+  try {
+    const [idRaw, secret] = String(req.body?.refreshToken || "").split(".");
+    const idUsuario = Number(idRaw);
+
+    if (!idUsuario || !secret) {
+      return res.status(401).json({ message: "Refresh token invalido" });
+    }
+
+    const tokenHash = hashCode(secret);
+    const record = await getActiveRefreshTokenRecord({ idUsuario, tokenHash });
+    const usuario = record ? await getUsuarioById(idUsuario) : null;
+
+    if (!usuario) {
+      return res.status(401).json({ message: "Sesion expirada" });
+    }
+
+    await revokeRefreshTokenRecord(tokenHash);
+
+    return res.json({
+      token: signToken(usuario),
+      refreshToken: await issueRefreshToken(idUsuario)
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function logout(req, res, next) {
+  try {
+    const secret = String(req.body?.refreshToken || "").split(".")[1];
+    if (secret) {
+      await revokeRefreshTokenRecord(hashCode(secret));
+    }
+    return res.json({ message: "Sesion cerrada" });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function createNegocioWithUniqueCode(nombreNegocio) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -200,6 +252,7 @@ async function googleLogin(req, res, next) {
 
     res.json({
       token,
+      refreshToken: await issueRefreshToken(usuario.id_usuario),
       usuario,
       onboarding_required: onboardingRequired
     });
@@ -370,6 +423,7 @@ async function handleEmailRegistration(req, res, next, mode = "general") {
 
     res.status(201).json({
       token,
+      refreshToken: await issueRefreshToken(usuario.id_usuario),
       usuario,
       negocio,
       verification_email_sent: verificationEmailSent,
@@ -427,6 +481,7 @@ async function loginEmail(req, res, next) {
 
     res.json({
       token,
+      refreshToken: await issueRefreshToken(usuario.id_usuario),
       usuario: getPublicUser(usuario),
       onboarding_required: onboardingRequired
     });
@@ -988,6 +1043,8 @@ module.exports = {
   getMe,
   googleLogin,
   loginEmail,
+  logout,
+  refreshSession,
   resetPassword,
   requestEmailChange,
   registerEmployeeEmail,
