@@ -1,3 +1,6 @@
+const bcrypt = require("bcryptjs");
+const { deleteUserAccount } = require("../services/account-deletion.service");
+const { getUsuarioAuthById } = require("../models/usuarios.model");
 const {
   createUsuarioRecord,
   getUsuarioById,
@@ -220,7 +223,31 @@ async function updateAuthenticatedUsuarioProfile(req, res, next) {
   }
 }
 
+async function deleteAuthenticatedUsuario(req, res, next) {
+  try {
+    const usuario = await getUsuarioAuthById(req.auth.id_usuario);
+    if (!usuario || usuario.estado === "eliminado") {
+      return res.status(404).json({ message: "La cuenta no existe" });
+    }
+
+    // Cuentas con contrasena (y sin Google) deben confirmarla.
+    if (usuario.password_hash && !usuario.google_id) {
+      const password = String(req.body?.password || "");
+      const ok = password && await bcrypt.compare(password, usuario.password_hash);
+      if (!ok) {
+        return res.status(401).json({ message: "La contrasena no es correcta", reason: "invalid_password" });
+      }
+    }
+
+    await deleteUserAccount(usuario);
+    return res.json({ message: "Tu cuenta fue eliminada" });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
+  deleteAuthenticatedUsuario,
   buildAuthenticatedUserPayload,
   createUsuario,
   getAuthenticatedUsuario,
