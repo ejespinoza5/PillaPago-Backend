@@ -1,11 +1,13 @@
 {
-  "version": "1.0.4",
-  "build": 4,
+  "version": "1.0.5",
+  "build": 5,
   "minBuild": 1,
   "url": "https://pillapago.mutantech.site/descargas/pillapago.apk",
   "notas": [
-    "Diseño renovado",
-    "Filtros por mes y año corregidos",
-    "Lectura automática de comprobantes mejorada"
+    "Términos y condiciones y política de privacidad",
+    "Mejoras de seguridad",
+    "Lectura de comprobantes mejorada (Pichincha, Guayaquil y Deuna)",
+    "Revisión de datos antes de guardar",
+    "Opción para eliminar la cuenta"
   ]
 }

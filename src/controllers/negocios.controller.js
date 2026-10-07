@@ -196,7 +196,7 @@ async function getMyEmployeeQuota(req, res, next) {
     if (!idNegocio) {
       return res.status(403).json({ message: "Solo el dueno puede ver los cupos" });
     }
-    res.json(await getEmployeeQuota(idNegocio));
+    res.json({ ...(await getEmployeeQuota(idNegocio)), ssv_user_id: String(req.auth.id_usuario) });
   } catch (error) {
     next(error);
   }

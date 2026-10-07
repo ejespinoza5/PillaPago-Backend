@@ -18,6 +18,10 @@ require.cache[dbPath] = {
   exports: {
     query: async (sql, params) => {
       consultas.push({ sql, params });
+      if (global.__dbHandler) {
+        const r = global.__dbHandler(sql, params);
+        if (r) return r;
+      }
       return { rows: [], rowCount: 0 };
     },
   },
@@ -147,4 +151,48 @@ test("páginas legales públicas con contacto y fecha", async () => {
   assert.equal(css.status, 200);
   const raw = await fetch(`${base}/legal/terminos.html`);
   assert.equal(raw.status, 404);
+});
+
+test("AdMob SSV: acredita solo callbacks firmados por Google y sin repetir", async () => {
+  const ssv = require("../src/services/admob-ssv.service");
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  ssv.__setFetchKeys(async () => new Map([["123", publicKey.export({ type: "spki", format: "pem" })]]));
+
+  const vistas = new Set();
+  let acreditados = 0;
+  global.__dbHandler = (sql, params) => {
+    if (/FROM usuarios/.test(sql)) return { rows: [{ id_usuario: 7, rol: "dueno", id_negocio: 3 }], rowCount: 1 };
+    if (/INSERT INTO admob_recompensas/.test(sql)) {
+      if (vistas.has(params[0])) return { rows: [], rowCount: 0 };
+      vistas.add(params[0]);
+      return { rows: [], rowCount: 1 };
+    }
+    if (/SET anuncios_vistos = anuncios_vistos \+ 1/.test(sql)) { acreditados += 1; return { rows: [], rowCount: 1 }; }
+    return null;
+  };
+
+  const firmar = (q) => {
+    const sig = crypto.sign("sha256", Buffer.from(q), { key: privateKey, dsaEncoding: "der" }).toString("base64url");
+    return `${q}&signature=${sig}&key_id=123`;
+  };
+  const q = "ad_network=5450&ad_unit=8171850009&reward_amount=1&reward_item=cupo&timestamp=1&transaction_id=tx1&user_id=7";
+
+  const ok = await fetch(`${base}/api/admob/ssv?${firmar(q)}`);
+  assert.equal(ok.status, 200);
+  assert.equal(acreditados, 1);
+
+  const repetido = await fetch(`${base}/api/admob/ssv?${firmar(q)}`);
+  assert.equal(repetido.status, 200);
+  assert.equal(acreditados, 1, "una transacción repetida no debe contar dos veces");
+
+  const alterado = firmar(q).replace("user_id=7", "user_id=8");
+  assert.equal((await fetch(`${base}/api/admob/ssv?${alterado}`)).status, 403);
+
+  const falso = `${q.replace("tx1", "tx2")}&signature=AAAA&key_id=123`;
+  assert.equal((await fetch(`${base}/api/admob/ssv?${falso}`)).status, 403);
+  assert.equal(acreditados, 1);
+
+  const viejo = await fetch(`${base}/api/negocios/me/anuncio-visto`, { method: "POST" });
+  assert.equal(viejo.status, 404);
+  global.__dbHandler = null;
 });

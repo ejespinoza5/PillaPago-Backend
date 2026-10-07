@@ -1,3 +1,4 @@
+const { registrarAceptacionTerminos } = require("../services/legal.service");
 const bcrypt = require("bcryptjs");
 const { deleteUserAccount } = require("../services/account-deletion.service");
 const { getUsuarioAuthById } = require("../models/usuarios.model");
@@ -246,7 +247,20 @@ async function deleteAuthenticatedUsuario(req, res, next) {
   }
 }
 
+async function acceptTerms(req, res, next) {
+  try {
+    if (String(req.body?.acepta_terminos) !== "true") {
+      return res.status(400).json({ message: "Debes aceptar los terminos y declarar que eres mayor de edad" });
+    }
+    await registrarAceptacionTerminos(req.auth.id_usuario);
+    return res.json({ message: "Terminos aceptados", terminos_aceptados: true });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
+  acceptTerms,
   deleteAuthenticatedUsuario,
   buildAuthenticatedUserPayload,
   createUsuario,

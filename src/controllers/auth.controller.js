@@ -1,5 +1,5 @@
 const { checkEmployeeQuota } = require("../services/employee-quota.service");
-const { registrarAceptacionTerminos } = require("../services/legal.service");
+const { registrarAceptacionTerminos, terminosAceptados } = require("../services/legal.service");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
@@ -262,7 +262,8 @@ async function googleLogin(req, res, next) {
       token,
       refreshToken: await issueRefreshToken(usuario.id_usuario),
       usuario,
-      onboarding_required: onboardingRequired
+      onboarding_required: onboardingRequired,
+      terminos_aceptados: await terminosAceptados(usuario.id_usuario)
     });
   } catch (error) {
     if (error.message?.includes("GOOGLE_CLIENT_ID") || error.message?.includes("JWT_SECRET")) {
@@ -502,7 +503,8 @@ async function loginEmail(req, res, next) {
       token,
       refreshToken: await issueRefreshToken(usuario.id_usuario),
       usuario: getPublicUser(usuario),
-      onboarding_required: onboardingRequired
+      onboarding_required: onboardingRequired,
+      terminos_aceptados: await terminosAceptados(usuario.id_usuario)
     });
   } catch (error) {
     next(error);

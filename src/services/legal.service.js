@@ -27,6 +27,16 @@ async function registrarAceptacionTerminos(idUsuario) {
   );
 }
 
+/** true si el usuario ya acepto los terminos. */
+async function terminosAceptados(idUsuario) {
+  await ensureColumn();
+  const r = await query(
+    `SELECT terminos_aceptados_at FROM usuarios WHERE id_usuario = $1`,
+    [idUsuario]
+  );
+  return Boolean(r.rows[0]?.terminos_aceptados_at);
+}
+
 /** Responde una pagina legal con el correo de contacto configurado. */
 function servirPaginaLegal(archivo) {
   return (_req, res) => {
@@ -39,4 +49,4 @@ function servirPaginaLegal(archivo) {
   };
 }
 
-module.exports = { LEGAL_DIR, registrarAceptacionTerminos, servirPaginaLegal };
+module.exports = { LEGAL_DIR, registrarAceptacionTerminos, servirPaginaLegal, terminosAceptados };

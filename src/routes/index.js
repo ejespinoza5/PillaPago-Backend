@@ -1,5 +1,6 @@
 const express = require("express");
 
+const admobRoutes = require("./admob.routes");
 const authRoutes = require("./auth.routes");
 const bancosRoutes = require("./bancos.routes");
 const deviceTokensRoutes = require("./device-tokens.routes");
@@ -15,6 +16,7 @@ router.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+router.use("/admob", admobRoutes);
 router.use("/auth", authRoutes);
 router.use("/bancos", bancosRoutes);
 router.use("/device-tokens", deviceTokensRoutes);
