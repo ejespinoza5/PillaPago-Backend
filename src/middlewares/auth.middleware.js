@@ -15,7 +15,7 @@ function requireAuth(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, jwtSecret);
+    const payload = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] });
     req.auth = payload;
     next();
   } catch (_error) {

@@ -24,7 +24,7 @@ async function createEmailCodeRecord({ purpose, email, idUsuario, newEmail, code
   return result.rows[0];
 }
 
-async function consumeEmailCode({ purpose, email, idUsuario, newEmail, codeHash }) {
+async function consumeEmailCodeOnce({ purpose, email, idUsuario, newEmail, codeHash }) {
   const result = await query(
     `UPDATE email_verification_codes
      SET used_at = NOW()
@@ -47,6 +47,47 @@ async function consumeEmailCode({ purpose, email, idUsuario, newEmail, codeHash 
 
   return result.rows[0] || null;
 }
+
+// Maximo de intentos fallidos antes de invalidar el codigo (evita fuerza bruta
+// sobre los codigos de 6 digitos).
+const MAX_CODE_ATTEMPTS = 5;
+let attemptsColumnReady = null;
+
+function ensureAttemptsColumn() {
+  attemptsColumnReady ??= query(
+    `ALTER TABLE email_verification_codes ADD COLUMN IF NOT EXISTS intentos INT NOT NULL DEFAULT 0`
+  ).catch((error) => {
+    attemptsColumnReady = null;
+    throw error;
+  });
+  return attemptsColumnReady;
+}
+
+async function consumeEmailCode(params) {
+  await ensureAttemptsColumn();
+  const consumed = await consumeEmailCodeOnce(params);
+  if (consumed) return consumed;
+
+  // Codigo incorrecto: suma un intento al codigo vigente y lo invalida al llegar al maximo.
+  const { purpose, email, idUsuario, newEmail } = params;
+  await query(
+    `UPDATE email_verification_codes
+     SET intentos = intentos + 1,
+         used_at = CASE WHEN intentos + 1 >= $5 THEN NOW() ELSE used_at END
+     WHERE id_email_code = (
+       SELECT id_email_code FROM email_verification_codes
+       WHERE purpose = $1 AND email = $2
+         AND ($3::INT IS NULL OR id_usuario = $3)
+         AND ($4::VARCHAR IS NULL OR new_email = $4)
+         AND used_at IS NULL AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1
+     )`,
+    [purpose, email, idUsuario || null, newEmail || null, MAX_CODE_ATTEMPTS]
+  );
+  return null;
+}
+
 
 async function getLatestEmailCodeStatus({ purpose, email, idUsuario, newEmail, codeHash }) {
   const result = await query(

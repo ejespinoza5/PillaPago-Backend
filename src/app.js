@@ -2,13 +2,18 @@ const express = require("express");
 const path = require("path");
 
 const apiRoutes = require("./routes");
+const { applySecurity } = require("./middlewares/security.middleware");
+const { LEGAL_DIR, servirPaginaLegal } = require("./services/legal.service");
 
 const app = express();
 const UPLOADS_ROOT = path.resolve(__dirname, "..", "imagenes subidas");
 const LEGACY_UPLOADS_ROOT = path.resolve(__dirname, "imagenes subidas");
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+applySecurity(app);
+
+// Las imagenes llegan por multipart (multer), asi que el JSON puede ser pequeno.
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use("/imagenes-subidas", express.static(UPLOADS_ROOT));
 app.use("/imagenes-subidas", express.static(LEGACY_UPLOADS_ROOT));
 
@@ -23,6 +28,11 @@ app.get("/version.json", (_req, res) => {
   res.sendFile(path.join(PUBLIC_ROOT, "version.json"));
 });
 app.use("/descargas", express.static(path.join(PUBLIC_ROOT, "descargas")));
+
+// Paginas legales (tambien se usan como URL de privacidad en Google Play).
+app.get("/terminos", servirPaginaLegal("terminos.html"));
+app.get("/privacidad", servirPaginaLegal("privacidad.html"));
+app.get("/legal/legal.css", (_req, res) => res.sendFile(path.join(LEGAL_DIR, "legal.css")));
 
 app.use("/api", apiRoutes);
 

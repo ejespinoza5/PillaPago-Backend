@@ -1,4 +1,5 @@
 const { checkEmployeeQuota } = require("../services/employee-quota.service");
+const { registrarAceptacionTerminos } = require("../services/legal.service");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
@@ -134,7 +135,7 @@ function signToken(usuario) {
       rol: usuario.rol
     },
     jwtSecret,
-    { expiresIn: "7d" }
+    { expiresIn: "1d", algorithm: "HS256" }
   );
 }
 
@@ -246,6 +247,12 @@ async function googleLogin(req, res, next) {
       rol: "pendiente",
       idNegocio: null
     });
+
+    if (String(req.body?.acepta_terminos) === "true") {
+
+      await registrarAceptacionTerminos(usuario.id_usuario);
+
+    }
 
     const token = signToken(usuario);
 
@@ -388,6 +395,12 @@ async function handleEmailRegistration(req, res, next, mode = "general") {
       } catch (notificationError) {
         console.error("No se pudo crear notificacion de bienvenida para dueno", notificationError);
       }
+    }
+
+    if (String(req.body?.acepta_terminos) === "true") {
+
+      await registrarAceptacionTerminos(usuario.id_usuario);
+
     }
 
     const token = signToken(usuario);
