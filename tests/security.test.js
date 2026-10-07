@@ -192,6 +192,10 @@ test("AdMob SSV: acredita solo callbacks firmados por Google y sin repetir", asy
   assert.equal((await fetch(`${base}/api/admob/ssv?${falso}`)).status, 403);
   assert.equal(acreditados, 1);
 
+  const prueba = firmar("ad_network=5450&ad_unit=8171850009&reward_amount=1&reward_item=cupo&timestamp=1&transaction_id=123456789");
+  assert.equal((await fetch(`${base}/api/admob/ssv?${prueba}`)).status, 200, "la verificación de AdMob debe recibir 200");
+  assert.equal(acreditados, 1);
+
   const viejo = await fetch(`${base}/api/negocios/me/anuncio-visto`, { method: "POST" });
   assert.equal(viejo.status, 404);
   global.__dbHandler = null;

@@ -70,8 +70,10 @@ function ensureTable() {
 async function processReward(params) {
   const transactionId = params.get("transaction_id");
   const idUsuario = Number(params.get("user_id"));
+  // La consola de AdMob ("Verificar URL") envia un callback firmado sin
+  // usuario: la firma ya se valido, respondemos 200 sin acreditar nada.
   if (!transactionId || !Number.isInteger(idUsuario) || idUsuario <= 0) {
-    return { status: 400, message: "transaction_id o user_id invalidos" };
+    return { status: 200, message: "Callback verificado; sin usuario que acreditar" };
   }
 
   const usuario = await getUsuarioById(idUsuario);
