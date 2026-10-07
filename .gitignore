@@ -9,3 +9,7 @@ src/imagenes subidas/
 # Credenciales (cuentas de servicio de Firebase, etc.)
 src/utils/*.json
 *firebase-adminsdk*.json
+
+# Archivos de publicacion que se suben a mano al servidor
+public/version.json
+public/descargas/
